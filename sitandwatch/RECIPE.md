@@ -70,25 +70,43 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 
 | Mood | When | He does | Says |
 | --- | --- | --- | --- |
+| `streak` | the same agent's 3rd finish within 10 min (4 ticks) | level 3 pose, extra confetti, gold arrow at that desk | streak pool |
 | `burst` | 3 finishes within 60s (6 ticks) | level 3 pose, both arms pumping at 150ms, 14 more confetti | `they're flying!`, `yes lads` |
 | `error` | an agent we showed exited with code > 0 (4 ticks) | hands on head, eyes squeezed, grimace, sweat, popcorn spilled, small shake | `oh no`, `that's not good` |
 | `collapse` | 2+ working dropped to none (5 ticks) | see below | `ahh`, `job done` |
 | `finish` | working to done (3 ticks) | the fist pump below | `GET IN!` |
+| `allBlocked` | 2+ blocked and none working | face down (hair over the face), two tears, popcorn all over the rug | meltdown pool |
 | `multiBlocked` | 2+ blocked | both hands up, head whipping left and right | `which one?!`, `too many` |
 | `pointAtBlocked` | one blocked 2+ min | half out of the chair, foam finger up reading `THAT`, red arrow at that desk | `THAT one`, `<tab>!` |
+| `areYouSure` | every 3rd newly blocked agent, instead of the phone (4 ticks) | calm, seated; `Are you sure?` bubble over that desk | `Yes` |
 | `blocked` | one blocked | the phone, then the blocked pose below | |
 | `welcome` | a new desk (3 ticks; not in the first 15s) | a nod, `hi` on the finger, green arrow at the new desk | `welcome`, `hi <tab>` |
 | `slumped` / `glazedHard` / `glazed` | longest working 60 / 30 / 10+ min | glazed, below; pillow from 30, lids lower at 60 | `I have a life too`, `hmm`, `still going...` |
 | `fourthWall` | agents working, no focus change or header click for 5 min | wide eyes, one brow up, eating slowly | `you still watching?` |
+| `longIdle` | nothing working or blocked for 10 min | back in the chair asleep: lids shut, chin down, a still `z Z` | an idle line for 30s in every 3 min, else silent |
 | `lateNight` | 10pm to 6am, someone working | level pose | `still at it?` |
 | `howMany` | 10+ agents seen since the panel started | eyes darting | `how many are there?` |
 | `normal` | otherwise | level pose | level lines |
 
+- **Lines** live in `lines.js`, one pool per state (levels 1 to 3, finish, blocked, ship, streak,
+  meltdown, idle, poke). `pool(name, seed)` shuffles a pool with the session's seed and puts the
+  original line first, and `frames()` cycles it natively. The pixel font has no curly quotes.
+- **Chaos** at level 3 when 6+ are working, or always after `herdr-app do sitandwatch.chaos`
+  (remembered in `localStorage`): 12 more confetti at 1.8× the period, lines every 500ms, a bigger
+  head throw.
+- **Can** on the right armrest from level 2. **Tint**: the scarf and foam finger stripe move 35%
+  toward the shirt colour of whoever has the most working agents.
+- **Level-up**: reaching level 3 warms the corner glow for 2 ticks. **Linger**: 3 confetti bits
+  drift for a second after the party popper ends.
+- **Click him**: 2 ticks of a line from the poke pool, his head turned a pixel. A click counts as you
+  being around. A transparent target sits on top of the drawing so the pixels can't swallow it.
 - **Nightcap** (blue with a white bobble) whenever it's 10pm to 6am and he's in the chair.
 - **Provider flavour**, in the `normal` mood only, from `program.key` (or hc's `agent`): more than
   half Claude, a slow nod; more than half Codex, a side-eye; two or more kinds, `the whole team's in`
   joins the lines.
-- **First ship** of the session: the explosion at 1.5× with 24 bits of debris, `FIRST ONE!`.
+- **Ship**: 24 bits of debris (32 and 1.5× for the first of the session, with `FIRST ONE!`), and a
+  banner that fades after 2s. The hook sends `sitandwatch.ship-merged` (gh pr merge),
+  `ship-deployed` (vercel) or `ship-pushed` (git push), shown as `PR MERGED`, `DEPLOYED`, `IT'S LIVE`.
 - **Where the numbers come from**: Herdr's agent list has no start times or errors. Every 10s the
   panel runs `hc ls --all --json` (finished terminals carry `exit_code`) and `hc get <t> --json` for
   each working or blocked one (`status_ms` is when it entered that status, so durations survive a
@@ -114,9 +132,14 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - **An agent is blocked**: the mood drops to at most level 1, a sad mouth, a tear, the popcorn
   spilled on the floor, `wah wah`, `they need me?!`, `noooo`.
 - **Clicking a desk** focuses that agent (`agent.focus`).
-- **Demo**: clicking the header, or `herdr-app do sitandwatch.demo`, cycles 19 labelled states
-  every 5s with fake desks: empty chair, the three levels, finished, blocked, shipped, then one per
-  mood. `demo.gif` is a recording of one cycle. Again to stop.
+- **Demo**: clicking the header, or `herdr-app do sitandwatch.demo`, cycles 24 labelled states
+  every 5s with fake desks: the three levels, finished, blocked, shipped, one per mood, and the empty
+  chair last. `demo.gif` is a recording of one cycle. Again to stop.
+- **Developer mode**: `herdr-app do sitandwatch.dev` (remembered) shows a strip under the header with
+  the mood, level, counts and durations it's picked from, and the live one-shots. Its `buttons` chip
+  opens rows to force a level, pin a mood (one-shots still take over while they run) or fire any
+  one-shot as the real event would. Commands do the same: `level-<0..3|real>`, `mood-<name|auto>`,
+  `fire-<event>`.
 - Every motion is a native `loop` or `frames`; nothing animates when nothing is happening.
 - No keys and no hovers: it takes no keys, so there is no `keys.json` to merge.
 
@@ -125,6 +148,7 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - `mods/sitandwatch/mod.json`: `{ "place": "left", "size": 280, "title": "SitAndWatch" }`.
 - `mods/sitandwatch/panel.js`: the panel (`panel(list, party, opts)`), desks, `devLevel(list)` and
   `resolveMood(m, level)`.
+- `mods/sitandwatch/lines.js`: what he says, `pool()` and `pickLine()`.
 - `mods/sitandwatch/art.js`: sprites as rows of palette letters (`sprite(rows, palette, s)` draws one
   `div` per colour run), `bot()` from plain rectangles, `spectator(level, s, id, { panic, party, ship, mood, fx, ... })`,
   `explosion()`.
@@ -135,7 +159,8 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   `hc(["ls", "--all", "--json"])` every 10s in a `cx.spawn`, live terminals with a status, merged by
   address. The same poll finds crashes and asks `hc get` for status times. A 1s timer advances the
   demo, ends the party and counts down the one-shots.
-- Commands: `sitandwatch.demo` and `sitandwatch.ship` through `nextCommand()`. Calls `agents()`,
+- Commands through `nextCommand()`: `demo`, `dev`, `chaos`, `ship` and `ship-<kind>`, `fire-<event>`,
+  `mood-<name>`, `level-<n>`. Calls `agents()`,
   `hc` (`ls`, `get`), `run("agent.focus")`.
   No network, no `exec`, no files outside its folder.
 - Based on [zuccs/herdr-office-layout](https://github.com/zuccs/herdr-office-layout) (MIT): its
@@ -161,6 +186,15 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - The demo toggles: `herdr-app do sitandwatch.demo` while it runs stops it, and a mod reload (any
   file in the folder changing) stops it too. Look at the header (brown with `STOP` means on) before
   recording it.
+- A reload, or Herdr rebuilding the view, leaves the old `nextCommand()` loop waiting alongside the
+  new one, and its `cx` keeps working, so it takes commands and changes a view nobody sees. Each
+  panel build writes a token to `localStorage` when it starts, and a loop whose token isn't the
+  latest hands the command on with `run("sitandwatch.<command>")` and stops. Builds from before this
+  fix can only be cleared by restarting the window.
+- Don't call `setShared()` from `init`: it re-renders every mod, and a re-render that rebuilds views
+  runs `init` again.
+- `herdr-app shot` saves the last frame the window drew. With the Mac locked or the display asleep
+  nothing is drawn, so shots go stale. Keep it awake (`caffeinate -u`) while recording.
 - `loop` periods must be at least 100ms. Loops need a stable `.id()`; put the level in the id so
   they restart at the new speed when it changes.
 - `herdr-app check` renders the default role, the panel, with no agents: it can't show levels 1–3.
@@ -175,7 +209,7 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   get a standing ovation with confetti.
 - An agent asking for permission turns its screen red and makes him cry `wah wah` over spilled
   popcorn; an agent finishing sets off the party popper.
-- `herdr-app do sitandwatch.demo` cycles all 19 states with labels, and `herdr-app status` reports no
+- `herdr-app do sitandwatch.demo` cycles all 24 states with labels, and `herdr-app status` reports no
   errors throughout.
 - Clicking a desk focuses that agent.
 - `herdr-app do sitandwatch.ship`, or a `git push` from Claude Code with the hook installed, sets off

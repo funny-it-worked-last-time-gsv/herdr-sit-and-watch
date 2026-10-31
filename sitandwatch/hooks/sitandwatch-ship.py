@@ -20,6 +20,15 @@ def is_ship(cmd: str) -> bool:
     ))
 
 
+def ship_kind(cmd: str) -> str:
+    """What shipped, for the banner: the panel shows PR MERGED, DEPLOYED or IT'S LIVE."""
+    if re.search(r"\bgh\s+pr\s+merge\b", cmd):
+        return "merged"
+    if re.search(r"\bvercel\b", cmd):
+        return "deployed"
+    return "pushed"
+
+
 def main() -> None:
     try:
         data = json.load(sys.stdin)
@@ -30,7 +39,7 @@ def main() -> None:
         return
     herdr = shutil.which("herdr-app")
     if herdr:
-        subprocess.run([herdr, "do", "sitandwatch.ship"], capture_output=True, timeout=5)
+        subprocess.run([herdr, "do", f"sitandwatch.ship-{ship_kind(cmd)}"], capture_output=True, timeout=5)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,8 @@ import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { agents, hc, nextCommand, spaces, panes, props, run, setAgentOrder, knownAgents } from "herdr";
 import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H } from "./art.js";
-import { panel } from "./panel.js";
+import { panel, devLevel } from "./panel.js";
+import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
 // group of desks on a rug. Idle workers wander, and everyone (the cat too) keeps to the walkways:
@@ -19,13 +20,12 @@ const W1 = ["working", "idle", "idle", "idle", "idle", "idle"];
 const left = (n, t) => Math.max(0, n - t);
 // Panel demo: one state at a time (several animated spectators at once is too slow for one render).
 const DEMO_STATES = [
-  ["Nothing running: empty chair", ["idle", "idle", "idle", "idle", "idle", "idle"], false],
   ["Level 1: one agent working", ["working", "idle", "idle", "idle", "idle", "idle"], false],
   ["Level 2: two or three working", ["working", "working", "working", "idle", "idle", "idle"], false],
   ["Level 3: four+ (or all) working", ["working", "working", "working", "working", "working", "done"], false],
   ["Agent finished: party popper", ["working", "done", "idle", "idle", "idle", "idle"], true],
   ["Agent blocked: wah wah", ["working", "working", "blocked", "idle", "idle", "idle"], false],
-  ["Shipped: KABOOM", ["done", "done", "idle", "idle", "idle", "idle"], false, true],
+  ["PR merged: KABOOM", ["done", "done", "idle", "idle", "idle", "idle"], false, true],
   // m(tick) overrides the metrics the mood is picked from, for that second of the state
   ["Working 30+ min: glazed over", W1, false, false, () => ({ longestWorkingMs: 35 * MIN })],
   ["Finish: fist pump", ["working", "done", "idle", "idle", "idle", "idle"], true, false, (t) => ({ fx: { finishPump: left(3, t) } })],
@@ -40,8 +40,21 @@ const DEMO_STATES = [
   ["After 10pm: nightcap", W1, false, false, () => ({ hour: 23 })],
   ["Ignored 5+ min: fourth wall", W1, false, false, () => ({ userIdleMs: 6 * MIN })],
   ["10+ agents seen: how many?", ["working", "working", "idle", "idle", "idle", "idle"], false, false, () => ({ seen: 12 })],
+  ["All blocked: meltdown", ["blocked", "blocked", "blocked", "idle", "idle", "idle"], false, false],
+  ["Same agent x3: streak", ["done", "working", "working", "idle", "idle", "idle"], true, false,
+    (t) => ({ fx: { streak: left(4, t) }, streakAddr: "demo-0" })],
+  ["6+ working: chaos", ["working", "working", "working", "working", "working", "working"], false, false,
+    (t) => ({ fx: { levelUp: left(2, t) } })],
+  ["Blocked: Are you sure? Yes", ["working", "blocked", "idle", "idle", "idle", "idle"], false, false,
+    (t) => ({ fx: { areYouSure: left(4, t) }, aysAddr: "demo-1" })],
+  ["Quiet 10+ min: dozing", ["idle", "idle", "idle", "idle", "idle", "idle"], false, false, () => ({ idleMs: 11 * MIN, idleTalk: true })],
+  ["Nothing running: empty chair", ["idle", "idle", "idle", "idle", "idle", "idle"], false],
 ];
-const ONE_SHOTS = ["finishPump", "blockedPhone", "collapse", "newAgentWelcome", "errorWince", "burstDance"];
+const OWNER = "commands-owner"; // localStorage key: which panel build takes commands
+const BANNERS = { merged: "PR MERGED", deployed: "DEPLOYED", pushed: "IT'S LIVE" };
+const POKES = 8;
+const ONE_SHOTS = ["finishPump", "blockedPhone", "collapse", "newAgentWelcome", "errorWince", "burstDance",
+  "streak", "areYouSure", "levelUp", "linger", "poke"];
 const SHIP_MS = 2600; // how long the explosion stays on screen
 const DEMO_MS = 5000;
 const THOUGHTS = ["?", "!", "♪", "♥", "...", "☼", "$", "#"];
@@ -132,6 +145,8 @@ export default class Office extends View {
       this.m = {
         local: {}, hcSince: {}, finishes: [], seen: new Set(), finishedSeen: null, prevAddrs: null,
         prevWorking: 0, welcomeAddr: null, lastUser: Date.now(), lastFocus: undefined, bornAt: Date.now(), ships: 0,
+        seed: this.seed, lastBusy: Date.now(), byAddr: {}, streakAddr: null, blocks: 0, aysAddr: null,
+        prevLevel: 0, pokeLine: "", chaos: (() => { try { return localStorage.getItem("chaos") === "1"; } catch { return false; } })(),
         ...Object.fromEntries(ONE_SHOTS.map((k) => [k, 0])),
       };
       poll(cx);
@@ -146,29 +161,77 @@ export default class Office extends View {
         if (partyOver) this.partyUntil = 0;
         let changed = false;
         for (const k of ONE_SHOTS) if (this.m[k] > 0) { this.m[k]--; changed = true; }
+        if (partyOver) this.m.linger = 1;   // a second of confetti still drifting down
         if (this.demoAt != null || partyOver || changed || ++ticks % 15 === 0) cx.notify();
       });
       // `herdr-app do sitandwatch.ship` (sent by the Claude Code hook after a push) sets off the explosion:
       // stage 0 draws it squashed, stage 1 a moment later lets transition() blow it out, then it clears.
       this.ship = null;
+      // developer mode: `herdr-app do sitandwatch.dev`, remembered across restarts
+      this.dev = { on: (() => { try { return localStorage.getItem("dev") === "1"; } catch { return false; } })(), mood: null, level: null };
+      // A reload or a rebuilt view leaves the old loop below waiting too, and its cx keeps working,
+      // so it would take commands and change a view nobody sees. The newest panel claims the
+      // commands; an older loop that gets one hands it on and stops. localStorage, not setShared:
+      // setting shared state re-renders every mod, and doing that from init loops the window.
+      const token = Math.random().toString(36).slice(2);
+      try { localStorage.setItem(OWNER, token); } catch {}
       cx.spawn(async (cx) => {
         for (;;) {
           const c = await nextCommand();
+          let mine = false;
+          try { mine = localStorage.getItem(OWNER) === token; cx.notify(); } catch { mine = false; }
+          if (!mine) { try { run(`sitandwatch.${c}`); } catch {} return; }
           if (c === "demo") { this.toggleDemo(); cx.notify(); }
-          if (c === "ship") {
-            const key = Date.now();
-            this.m.ships++;
-            this.ship = { key, stage: 0, first: this.m.ships === 1 };
+          if (c === "dev") {
+            this.dev = { on: !this.dev.on, mood: null, level: null };
+            try { localStorage.setItem("dev", this.dev.on ? "1" : "0"); } catch {}
             cx.notify();
-            cx.timer.after(60, (cx) => { if (this.ship?.key === key) { this.ship.stage = 1; cx.notify(); } });
-            cx.timer.after(SHIP_MS, (cx) => { if (this.ship?.key === key) { this.ship = null; cx.notify(); } });
           }
+          // `herdr-app do sitandwatch.chaos` turns chaos mode on for good (or off again)
+          if (c === "chaos") {
+            this.m.chaos = !this.m.chaos;
+            try { localStorage.setItem("chaos", this.m.chaos ? "1" : "0"); } catch {}
+            cx.notify();
+          }
+          // ship, ship-merged, ship-deployed: the hook says what shipped, for the banner
+          if (c === "ship" || c.startsWith("ship-")) this.boom(c.slice(5), cx);
+          // developer mode from the command line too: fire-<event>, mood-<name|auto>, level-<0..3|real>
+          if (c.startsWith("fire-")) this.fire(c.slice(5), cx);
+          if (c.startsWith("mood-")) { const v = c.slice(5); this.dev.mood = v === "auto" ? null : v; cx.notify(); }
+          if (c.startsWith("level-")) { const v = c.slice(6); this.dev.level = v === "real" ? null : Number(v); cx.notify(); }
         }
       });
     }
     if (roleOf(props()) !== "office") return;
     this.roomView = cx.new(Room, this.roomProps());
     cx.timer.every(250, (cx) => { this.syncRoom(); if (this.tick()) cx.notify(); });
+  }
+
+  // The ship explosion. kind: "merged", "deployed" or "pushed" (the default), for the banner.
+  boom(kind, cx) {
+    const key = Date.now();
+    this.m.ships++;
+    this.ship = { key, stage: 0, first: this.m.ships === 1, banner: BANNERS[kind] ?? BANNERS.pushed };
+    cx.notify();
+    cx.timer.after(60, (cx) => { if (this.ship?.key === key) { this.ship.stage = 1; cx.notify(); } });
+    cx.timer.after(SHIP_MS, (cx) => { if (this.ship?.key === key) { this.ship = null; cx.notify(); } });
+  }
+
+  // Developer mode's "fire" buttons: start a one-shot exactly as the real event would.
+  fire(ev, cx) {
+    const m = this.m, first = this.list[0]?.address ?? null;
+    const set = { finish: ["finishPump", 3], phone: ["blockedPhone", 4], "yes?": ["areYouSure", 4], collapse: ["collapse", 5],
+      burst: ["burstDance", 6], streak: ["streak", 4], error: ["errorWince", 4], welcome: ["newAgentWelcome", 3],
+      levelUp: ["levelUp", 2], linger: ["linger", 2], poke: ["poke", 2] }[ev];
+    if (set) m[set[0]] = set[1];
+    if (ev === "finish") this.partyUntil = Date.now() + 3000;
+    if (ev === "streak") m.streakAddr = first;
+    if (ev === "welcome") m.welcomeAddr = first;
+    if (ev === "yes?") m.aysAddr = first;
+    if (ev === "poke") m.pokeLine = pickLine("poke", Math.floor(Math.random() * POKES));
+    if (ev === "chaos") m.chaos = !m.chaos;
+    if (ev === "pushed" || ev === "merged" || ev === "deployed") return this.boom(ev, cx);
+    cx.notify();
   }
 
   // Run on every panel render: durations, edges against the previous statuses, the one-shots they
@@ -185,11 +248,27 @@ export default class Office extends View {
     let longestBlockedMs = 0, longestBlockedAddr = null;
     for (const a of blocked) if (now - since(a) > longestBlockedMs) { longestBlockedMs = now - since(a); longestBlockedAddr = a.address; }
 
-    const finished = list.some((a) => prev[a.address] === "working" && a.status === "done");
+    const done = list.filter((a) => prev[a.address] === "working" && a.status === "done");
+    const finished = done.length > 0;
     if (finished) { m.finishPump = 3; m.finishes.push(now); }
+    // the same agent finishing three times in ten minutes is a streak
+    for (const a of done) {
+      const ts = (m.byAddr[a.address] ?? []).filter((t) => now - t < 10 * MIN).concat(now);
+      m.byAddr[a.address] = ts;
+      if (ts.length >= 3) { m.streak = 4; m.streakAddr = a.address; }
+    }
+    if (working.length || finished) m.lastBusy = now;
+    const level = devLevel(list);
+    if (level === 3 && m.prevLevel < 3) m.levelUp = 2;
+    m.prevLevel = level;
     m.finishes = m.finishes.filter((t) => now - t < MIN);
     if (finished && m.finishes.length >= 3 && !m.burstDance) m.burstDance = 6;
-    if (!first && list.some((a) => a.status === "blocked" && prev[a.address] !== "blocked")) m.blockedPhone = 4;
+    const newBlock = first ? null : list.find((a) => a.status === "blocked" && prev[a.address] !== "blocked");
+    if (newBlock) {
+      // every third new block, the meme instead of the phone: "Are you sure?" "Yes"
+      if (++m.blocks % 3 === 0) { m.areYouSure = 4; m.aysAddr = newBlock.address; }
+      else m.blockedPhone = 4;
+    }
     if (m.prevWorking >= 2 && working.length === 0) m.collapse = 5;
     m.prevWorking = working.length;
     // A desk that wasn't there before. Skip the first 15s: background helpers arrive with the first poll.
@@ -206,6 +285,8 @@ export default class Office extends View {
     return {
       working: working.length, blocked: blocked.length, longestWorkingMs, longestBlockedMs, longestBlockedAddr,
       welcomeAddr: m.welcomeAddr, userIdleMs: now - m.lastUser, hour: new Date().getHours(), seen: m.seen.size,
+      idleMs: working.length ? 0 : now - m.lastBusy, streakAddr: m.streakAddr, aysAddr: m.aysAddr,
+      seed: m.seed, chaos: m.chaos, pokeLine: m.pokeLine,
       fx: Object.fromEntries(ONE_SHOTS.map((k) => [k, m[k]])),
     };
   }
@@ -459,6 +540,13 @@ export default class Office extends View {
       }
       const now = Date.now();
       const toggle = (cx) => { this.m.lastUser = Date.now(); this.toggleDemo(); cx.notify(); };
+      // clicking him: he turns and says something for two ticks
+      const poke = (cx) => {
+        this.m.lastUser = Date.now();
+        this.m.poke = 2;
+        this.m.pokeLine = pickLine("poke", Math.floor(Math.random() * POKES));
+        cx.notify();
+      };
       if (this.demoAt != null) {
         const t = now - this.demoAt, i = Math.floor(t / DEMO_MS) % DEMO_STATES.length, [label, sts, party, ship, mAt] = DEMO_STATES[i];
         // The 1s timer re-renders the demo: squashed for the first second, blown out until 3s, then gone.
@@ -466,15 +554,27 @@ export default class Office extends View {
         const fake = sts.map((status, j) => ({ address: `demo-${j}`, status, tab_name: `bot ${j + 1}`, program: null, focused: false }));
         const count = (st) => sts.filter((x) => x === st).length;
         const m = { working: count("working"), blocked: count("blocked"), longestWorkingMs: 0, longestBlockedMs: 0, longestBlockedAddr: null,
-          welcomeAddr: null, userIdleMs: 0, hour: 12, seen: sts.length, fx: {}, ...(mAt?.(Math.floor(into / 1000)) ?? {}) };
-        return panel(fake, party, { label: `DEMO ${i + 1}/${DEMO_STATES.length}  ${label}`, toggle, ship: stage, shipKey: Math.floor(t / DEMO_MS), m });
+          welcomeAddr: null, userIdleMs: 0, hour: 12, seen: sts.length, idleMs: 0, seed: this.seed, fx: {},
+          ...(mAt?.(Math.floor(into / 1000)) ?? {}) };
+        m.fx = { ...m.fx, poke: this.m.poke };
+        m.pokeLine = this.m.pokeLine;
+        return panel(fake, party, { label: `DEMO ${i + 1}/${DEMO_STATES.length}  ${label}`, toggle, ship: stage, shipKey: Math.floor(t / DEMO_MS), m, banner: BANNERS.merged, onDev: poke });
       }
       // An agent going working -> done sets off the party popper for 3s; the 1s timer clears it.
       const prev = this.prevStatus ?? {};
       if (list.some((a) => prev[a.address] === "working" && a.status === "done")) this.partyUntil = now + 3000;
       const m = this.trackMetrics(list, prev, !this.prevStatus);
       this.prevStatus = Object.fromEntries(list.map((a) => [a.address, a.status]));
-      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, m }); }
+      this.list = list;
+      const d = this.dev;
+      const dev = d.on ? {
+        mood: d.mood, level: d.level, open: d.open,
+        onOpen: (cx) => { d.open = !d.open; cx.notify(); },
+        onMood: (v, cx) => { d.mood = v; cx.notify(); },
+        onLevel: (v, cx) => { d.level = v; cx.notify(); },
+        onFire: (v, cx) => this.fire(v, cx),
+      } : null;
+      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev }); }
       catch (e) { return div().p(8).bg("#fff").child(txt(`ERR ${e?.message ?? e}`, 12, "#a8322a")); }
     }
     if (role === "rail") {

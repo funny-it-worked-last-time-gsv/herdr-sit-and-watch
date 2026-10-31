@@ -20,22 +20,42 @@ work. The more of them are working, the more excited you get. See
 | One just finished | Party popper and a fist pump, popcorn flying. "GET IN!" |
 | One needs you | Spilled popcorn, a tear, a phone call. "they need me?!" ... "on my way..." |
 | Two or more need you | Both hands up, head whipping between desks. "which one?!" |
+| They all need you, nobody's working | Face down, popcorn everywhere, two tears. "WHY DO I EVEN HAVE AGENTS" |
+| Every third new block | The meme: "Are you sure?" over the desk, "Yes" from the chair. |
 | One has needed you for 2+ minutes | Half out of the chair, a red arrow on that desk. "THAT one" |
 | Three finished within a minute | Standing, both arms pumping, extra confetti. "they're flying!" |
+| The same agent finished three times in ten minutes | A gold arrow on its desk, confetti. "HE'S ON FIRE" |
+| Six or more working | Chaos: confetti that lingers, faster lines, a bigger head throw. |
 | One crashed (exited non-zero) | Hands on his head, popcorn on the floor. "oh no" |
 | A new agent appears | A nod, a green arrow on the new desk. "welcome" |
 | One has been going 10+ minutes | Glazed over and slumping, a pillow after 30, slumped after 60. "I have a life too" |
 | Two or more were busy and all stopped | Drops back into the chair. "ahh" ... "job done" |
 | Agents working and you haven't touched Herdr in 5 minutes | Stares at you, eats slowly. "you still watching?" |
 | After 10pm | A nightcap. "still at it?" |
+| Nothing for 10 minutes | Back in the chair, dozing. "z Z", and now and then "popcorn's getting cold" |
 | 10+ agents seen this session | Eyes darting about. "how many are there?" |
-| Something shipped | Explosion, a bigger one the first time. "KABOOM!" (needs the Claude Code hook, see below) |
+| Something shipped | Explosion with a PR MERGED, DEPLOYED or IT'S LIVE banner, bigger the first time. "KABOOM!" (needs the Claude Code hook, see below) |
 
 Mostly Claude Code agents get a knowing nod, mostly Codex a side-eye, a mix "the whole team's in".
+From level 2 there's a can on the armrest, and his scarf leans toward the colour of whoever's doing
+most of the work. Each state has a pool of lines, shuffled per session. Click him and he talks back.
 
-Click the header, or run `herdr-app do sitandwatch.demo`, to cycle through all 19 states with labels
+Click the header, or run `herdr-app do sitandwatch.demo`, to cycle through all 24 states with labels
 (the animation above is one cycle).
 Click a desk to jump to that agent.
+
+### Developer mode
+
+`herdr-app do sitandwatch.dev` adds a strip under the header with the numbers the mood is picked
+from (mood, level, counts, how long things have run, live one-shots). Its `buttons` chip shows rows to
+force a level, pin a mood or fire any event. The same works from the command line:
+
+```sh
+herdr-app do sitandwatch.level-3          # or level-real
+herdr-app do sitandwatch.mood-allBlocked  # any mood name, or mood-auto
+herdr-app do sitandwatch.fire-streak      # finish, phone, collapse, burst, error, welcome, poke, merged, ...
+herdr-app do sitandwatch.chaos            # chaos mode on for good, or off again
+```
 
 ## Installation
 

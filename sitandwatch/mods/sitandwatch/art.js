@@ -1,4 +1,5 @@
 import { div, image, svg } from "gpui-kit";
+import { pool, pickLine } from "./lines.js";
 
 // Pixel art for the office: sprites are rows of palette letters, "." is see-through.
 export const PX = "PxPlus IBM VGA 8x16";
@@ -208,6 +209,12 @@ export function clutter(kind, R2) {
   }
 }
 
+// t of the way from colour a to colour b (both #rrggbb)
+export function mix(a, b, t) {
+  const ch = (h, i) => parseInt(h.slice(1 + i * 2, 3 + i * 2), 16);
+  return "#" + [0, 1, 2].map((i) => Math.round(ch(a, i) + (ch(b, i) - ch(a, i)) * t).toString(16).padStart(2, "0")).join("");
+}
+
 // ---- the dev in the corner chair ------------------------------------------
 // Front view, 26×28 art pixels. level 0 (nothing running) to 3 (everyone working).
 export const DEV_W = 26, DEV_H = 30;
@@ -223,16 +230,21 @@ const CHAIR = { a: "#8a1f2e", d: "#5e1420", l: "#a8323f", b: "#d9b25a", wood: "#
 export function spectator(level, s, id, opts) {
   const o = typeof opts === "object" && opts ? opts : { panic: !!opts };
   const { panic = false, party = false, ship = false, firstShip = false, mood = "normal", fx = {}, provider = null, night = false, name = "" } = o;
+  // seed: shuffles the line pools; chaos: 6+ working or toggled; tint: the dominant working agent's
+  // colour; linger: a second of confetti after the popper; poke/pokeLine: he was clicked;
+  // idleTalk/idleN: in the long-idle doze, whether this 30s is one where he mumbles, and which line.
+  const { seed = 0, chaos = false, tint = null, linger = false, poke = 0, pokeLine = "", idleTalk = false, idleN = 0 } = o;
   const { finishPump = 0, blockedPhone = 0, collapse = 0 } = fx;
   const R = (x, y, w, h, c) => r(x * s, y * s, w * s, h * s, c);
   const depth = { glazed: 1, glazedHard: 2, slumped: 3 }[mood] ?? 0, gl = depth > 0;
   // mood narrowed to the pose actually drawn
   const mode = mood === "finish" ? "pump" : mood === "blocked" && blockedPhone ? "phone" : gl ? "glazed" : mood;
-  const L = mode === "burst" ? 3
-    : mode === "collapse" || mode === "error" ? 0
-    : gl || mode === "multiBlocked" || mode === "pointAtBlocked" ? 1
+  const L = mode === "burst" || mode === "streak" ? 3
+    : mode === "collapse" || mode === "error" || mode === "allBlocked" || mode === "longIdle" ? 0
+    : gl || mode === "multiBlocked" || mode === "pointAtBlocked" || mode === "areYouSure" ? 1
     : panic ? Math.min(level, 1) : level;                // a blocked agent kills the mood
-  const sad = panic && mode !== "collapse" && mode !== "burst";
+  const sad = panic && !["collapse", "burst", "streak", "areYouSure"].includes(mode);
+  const melt = mode === "allBlocked", dozing = mode === "longIdle";
   const pumpUp = mode === "pump" && finishPump >= 2;    // fist in the air for the first two ticks
   const phoneK = mode === "phone" ? 4 - blockedPhone : -1; // 0 phone out, 1 screen flashes, 2 still out, 3 gone
   const up = L === 3 ? 6 : mode === "pointAtBlocked" ? 2 : 0; // standing ovation, or half out of the chair to point
@@ -251,12 +263,15 @@ export function spectator(level, s, id, opts) {
     : mode === "error" ? [R(4, 5, 4, 1, "#4a1010"), R(5, 5, 2, 1, "#ffffff")]                                // grimace
     : sad ? [R(5, 5, 2, 1, "#4a1010"), R(4, 6, 1, 1, "#4a1010"), R(7, 6, 1, 1, "#4a1010")]
     : [R(5, 5, 2, L === 0 ? 1 : Math.max(1, L), L === 0 ? "#a0522d" : "#4a1010")];
-  const headTop = -up + (L === 1 || L === 2 ? 1 : 0);
-  const head = div().absolute().left(7 * s).top(headTop * s).w(12 * s).h(7 * s).id(`${id}-head-${L}-${mode}-${flavour}`)
+  // face down in his hands when everything is blocked; chin dropping when he dozes off
+  const headTop = -up + (L === 1 || L === 2 ? 1 : 0) + (melt ? 3 : dozing ? 1 : 0);
+  const head = div().absolute().left((poke ? 6 : 7) * s).top(headTop * s).w(12 * s).h(7 * s).id(`${id}-head-${L}-${mode}-${flavour}`)
     .child(sprite(face, { H: DEV.hair, S: sk, E: dark }, s))
     .children(mouth)
     .when(gl, (e) => e.children(lid(depth === 3 ? 0.75 : 0.5)))
     .when(mode === "collapse" && collapse === 2, (e) => e.children(lid(1)))
+    .when(dozing, (e) => e.children(lid(1)))
+    .when(melt, (e) => e.child(R(2, 2, 8, 4, DEV.hair)).child(R(3, 5, 6, 1, "#2a1a10")))           // just the top of his head
     .when(mode === "error", (e) => e.children(lid(1)).child(R(3, 2, 2, 1, DEV.hair)).child(R(7, 2, 2, 1, DEV.hair)))
     .when(mode === "howMany", (e) => e.children(wide(0, `${id}-look`)))
     .when(mode === "fourthWall", (e) => e.children(wide(0)).child(R(3, 1, 2, 1, DEV.hair)).child(R(7, 2, 2, 1, DEV.hair)))
@@ -271,16 +286,17 @@ export function spectator(level, s, id, opts) {
       .child(R(4, 5, 4, 2, "#4a1010")))
     .when(night, (e) => e.child(R(2, -2, 8, 2, "#4f7dc9")).child(R(3, -3, 6, 1, "#4f7dc9")).child(R(2, 0, 8, 1, "#f4f4f0"))
       .child(R(9, -2, 2, 3, "#4f7dc9")).child(R(10, 1, 1, 1, "#ffffff")))                            // nightcap
-    .when(sad, (e) => e.child(R(3, 4, 1, 2, "#7fc4ff").id(`${id}-tear`).loop("top", { from: 4 * s, to: 7 * s, period: 900, easing: "linear" })));
-  if (L >= 3) head.loop("top", { from: (-up) * s, to: (-up - 2) * s, period: 300 });
+    .when(sad && !melt, (e) => e.child(R(3, 4, 1, 2, "#7fc4ff").id(`${id}-tear`).loop("top", { from: 4 * s, to: 7 * s, period: 900, easing: "linear" })));
+  if (L >= 3) head.loop("top", { from: (-up) * s, to: (-up - (chaos ? 4 : 2)) * s, period: chaos ? 220 : 300 });
   else if (mode === "multiBlocked") head.loop("left", { from: 5 * s, to: 9 * s, period: 300, easing: "linear" }); // which desk?!
   else if (mode === "welcome" || flavour === "claude") head.loop("top", { from: headTop * s, to: (headTop + 1) * s, period: mode === "welcome" ? 500 : 1600 }); // a nod
 
   // scarf: round the neck, the loose end flaps harder the busier it gets
   const calm = gl || mode === "error";
-  const scarfEnd = R(15, 9 - up, 2, 4, "#c9302c").id(`${id}-scarf-${L}-${calm}`);
+  const red = tint ? mix("#c9302c", tint, 0.35) : "#c9302c";   // tinted toward whoever's working
+  const scarfEnd = R(15, 9 - up, 2, 4, red).id(`${id}-scarf-${L}-${calm}`);
   if (L >= 1 && !calm) scarfEnd.loop("height", { from: 3 * s, to: 6 * s, period: [0, 1200, 500, 180][L], easing: "linear" });
-  const scarf = [R(8, 7 - up, 10, 2, "#c9302c"), R(10, 7 - up, 2, 2, "#f4f4f0"), R(14, 7 - up, 2, 2, "#f4f4f0"), scarfEnd];
+  const scarf = [R(8, 7 - up, 10, 2, red), R(10, 7 - up, 2, 2, "#f4f4f0"), R(14, 7 - up, 2, 2, "#f4f4f0"), scarfEnd];
 
   const parts = [
     R(8, 7 - up, 10, 10, sh),                                            // torso
@@ -329,7 +345,7 @@ export function spectator(level, s, id, opts) {
       const high = L === 3 || mode === "pointAtBlocked";
       const top = high ? -10 - up : -4;
       const foam = div().absolute().left(2 * s).top(top * s).w(6 * s).h(14 * s).id(`${id}-foam-${L}-${mode}`)
-        .child(R(1, 0, 2, 5, "#e0b040")).child(R(0, 4, 6, 5, "#e0b040")).child(R(1, 5, 4, 1, "#c9302c"))
+        .child(R(1, 0, 2, 5, "#e0b040")).child(R(0, 4, 6, 5, "#e0b040")).child(R(1, 5, 4, 1, red))
         .child(div().absolute().left(0).top(6 * s).w(6 * s).flex().justify_center()
           .child(txt(word[0], fs, "#7a2a10").id(`${id}-foamword-${word.join()}`).frames(word, 700)))
         .child(R(2, 9, 3, 5, sh));
@@ -358,17 +374,22 @@ export function spectator(level, s, id, opts) {
 
   const sweat = (x, period) => R(x, 2, 1, 2, "#7fc4ff").id(`${id}-sweat${x}-${L}`).loop("top", { from: 2 * s, to: 9 * s, period, easing: "linear" });
   const COLORS = ["#e05a8a", "#5ab0e0", "#e0c040", "#7ee0a0", "#c08ae0", "#f08a4a"];
-  const confetti = (n, tag) => Array.from({ length: n }, (_, i) => R(1 + ((i * 7) % 24), -8, 1, 1, COLORS[i % COLORS.length])
-    .id(`${id}-conf-${tag}-${i}`).loop("top", { from: (-10 - (i % 3) * 3) * s, to: (20 + (i % 4) * 2) * s, period: 900 + (i * 137) % 600, easing: "linear" }));
+  const confetti = (n, tag, slow = 1) => Array.from({ length: n }, (_, i) => R(1 + ((i * 7) % 24), -8, 1, 1, COLORS[i % COLORS.length])
+    .id(`${id}-conf-${tag}-${i}`).loop("top", { from: (-10 - (i % 3) * 3) * s, to: (20 + (i % 4) * 2) * s, period: Math.round((900 + (i * 137) % 600) * slow), easing: "linear" }));
 
   // ---- speech
   const nm = (name ?? "").slice(0, 10);
-  const levelLines = [["...", "zzz", "*yawn*"], ["ooh", "nice", "go on"], ["look at 'em go", "go on son!", "ooh yes"], ["SHIP IT!", "!!!", "MORE AGENTS", "YES LADS"]][L];
-  const lines = ship ? (firstShip ? ["FIRST ONE!", "KABOOM!", "IT'S LIVE!"] : ["KABOOM!", "IT'S LIVE!", "LEGENDS"])
+  const levelLines = L === 0 ? ["...", "zzz", "*yawn*"] : pool(`level${L}`, seed);
+  const lines = ship ? (firstShip ? ["FIRST ONE!", ...pool("ship", seed)] : pool("ship", seed))
+    : poke ? [pokeLine]
+    : mode === "streak" ? pool("streak", seed)
+    : mode === "allBlocked" ? pool("meltdown", seed)
+    : mode === "areYouSure" ? ["Yes"]
+    : mode === "longIdle" ? [pickLine("idle", idleN)]
     : mode === "burst" ? ["they're flying!", "yes lads"]
     : mode === "error" ? ["oh no", "that's not good"]
     : mode === "collapse" ? [collapse >= 3 ? "ahh" : "job done"]
-    : mode === "pump" ? ["GET IN!"]
+    : mode === "pump" ? pool("finish", seed)
     : mode === "multiBlocked" ? ["which one?!", "too many"]
     : mode === "pointAtBlocked" ? (nm ? ["THAT one", `${nm}!`] : ["THAT one"])
     : mode === "phone" ? [blockedPhone > 2 ? "they need me?!" : blockedPhone > 1 ? "noooo" : "on my way..."]
@@ -376,18 +397,19 @@ export function spectator(level, s, id, opts) {
     : depth === 3 ? ["I have a life too", "zzz", "still going..."]
     : depth === 2 ? ["I have a life too", "hmm"]
     : gl ? ["still going...", "hmm", "you good?"]
-    : sad ? ["wah wah", "they need me?!", "noooo"]
-    : party ? ["POP!", "GET IN!", "SHIPPED!"]
+    : sad ? pool("blocked", seed)
+    : party ? pool("finish", seed)
     : mode === "fourthWall" ? ["you still watching?", "..."]
     : mode === "lateNight" ? ["still at it?", ...levelLines]
     : mode === "howMany" ? ["how many are there?", ...levelLines]
     : flavour === "mixed" ? [...levelLines, "the whole team's in"]
     : levelLines;
-  const period = gl ? 8000 : mode === "fourthWall" || mode === "lateNight" || mode === "howMany" ? 3000
-    : sad ? 1200 : party || ship || mode === "burst" || mode === "error" ? 600 : [2400, 1600, 900, 450][L];
-  const red = (sad && mode !== "pointAtBlocked") || mode === "error";
+  const period = gl || melt ? 8000 : mode === "fourthWall" || mode === "lateNight" || mode === "howMany" ? 3000
+    : L === 3 && chaos ? 500 : sad ? 1400 : party || ship || mode === "pump" ? 900 : mode === "burst" || mode === "error" || mode === "streak" ? 700
+    : [2400, 1600, 1400, 1000][L];
+  const alarm = (sad && mode !== "pointAtBlocked") || mode === "error";
   const say = div().absolute().left(16 * s).top((-9 - up) * s).px(4).py(2).bg("#ffffff").border(2).border_color(ink)
-    .child(txt(lines[0], 12, red ? "#a8322a" : ink).id(`${id}-say-${L}-${mode}-${party}-${ship}-${lines.join("|")}`).frames(lines, period));
+    .child(txt(lines[0], 12, alarm ? "#a8322a" : ink).id(`${id}-say-${L}-${mode}-${party}-${ship}-${lines.join("|")}`).frames(lines, period));
 
   const chair = () => div().relative().w(DEV_W * s).h(DEV_H * s)
     .child(R(2, 3, 22, 16, CHAIR.a).border(2).border_color(CHAIR.d))
@@ -398,7 +420,7 @@ export function spectator(level, s, id, opts) {
     .child(R(1, 23, 2, 4, CHAIR.wood)).child(R(23, 23, 2, 4, CHAIR.wood)).child(R(5, 26, 2, 3, CHAIR.wood)).child(R(19, 26, 2, 3, CHAIR.wood));
 
   // Nothing happening: he's not there. Just the chair, a dent in the cushion and his popcorn.
-  const present = L > 0 || panic || party || ship || ["collapse", "error", "welcome"].includes(mode);
+  const present = L > 0 || panic || party || ship || ["collapse", "error", "welcome", "allBlocked", "longIdle"].includes(mode) || poke > 0;
   if (!present) return chair()
     .child(R(7, 17, 12, 1, CHAIR.d))
     .child(R(10, 14, 6, 5, "#f4f4f0").child(R(1, 0, 1, 5, "#c9302c")).child(R(3, 0, 1, 5, "#c9302c")).child(R(5, 0, 1, 5, "#c9302c")))
@@ -406,21 +428,30 @@ export function spectator(level, s, id, opts) {
 
   return chair()
     .when(depth >= 2, (e) => e.child(R(21, 7, 5, 2, "#dfe6f0")).child(R(22, 7, 3, 1, "#ffffff")))   // pillow on the armrest
+    // a can on the armrest once it gets going
+    .when(L >= 2, (e) => e.child(R(22, 5, 3, 4, "#c0c6cf")).child(R(22, 6, 3, 2, red)).child(R(22, 5, 1, 4, "#eef2f6")))
     .when(mode === "collapse" && collapse === 3, (e) => e.child(R(4, 17, 18, 1, CHAIR.d)))            // the cushion gives
     .child(shaker)
     // spilled popcorn when an agent is blocked or one crashed
     .when(spilled, (e) => e.child(R(19, 26, 5, 3, "#f4f4f0")).child(R(20, 26, 1, 3, "#c9302c")).child(R(22, 26, 1, 3, "#c9302c"))
       .children([[14, 28], [16, 29], [24, 28], [12, 29], [26, 29]].map(([x, y]) => R(x, y, 1, 1, "#fff6c8"))))
+    // everything blocked: popcorn everywhere, two tears dripping off his face
+    .when(melt, (e) => e.children([[-3, 28], [1, 29], [6, 28], [9, 29], [28, 28], [30, 29], [-1, 26]].map(([x, y]) => R(x, y, 1, 1, "#fff6c8")))
+      .children([9, 15].map((x, i) => R(x, 6, 1, 2, "#7fc4ff").id(`${id}-melt-tear${i}`).loop("top", { from: 6 * s, to: 12 * s, period: 800 + i * 300, easing: "linear" }))))
+    // dozing: a still "z Z", nothing moving
+    .when(dozing, (e) => e.child(txt("z Z", 12, "#24406e").absolute().left(19 * s).top(-3 * s)))
     .when(L >= 2 || mode === "error", (e) => e.child(sweat(6, 900)).child(sweat(19, 1300)))
     .when(L >= 3, (e) => e.child(sweat(3, 600)).child(sweat(22, 700))
       .children([0, 1, 2].map((i) => R(8 + i * 4, 10, 1, 1, "#fff6c8").id(`${id}-pop${i}`).loop("top", { from: 12 * s, to: (-4 - i * 3) * s, period: 500 + i * 130 })))
       .children(confetti(8, "cheer")))
-    .when(mode === "burst", (e) => e.children(confetti(14, "burst")))
+    .when(mode === "burst" || mode === "streak", (e) => e.children(confetti(14, "burst")))
+    .when(L >= 3 && chaos, (e) => e.children(confetti(12, "chaos", 1.8)))                            // slow, lingering
+    .when(linger && !sad, (e) => e.children(confetti(3, "linger", 1.6)))
     // party popper: an agent just finished
     .when(party && !sad, (e) => e.child(R(22, 12, 3, 4, "#e0b040").child(R(0, 0, 3, 1, "#c9302c")))
       .child(txt("*", 12, "#c9302c").absolute().left(24 * s).top(6 * s).id(`${id}-popper`).frames(["*", "\\*/", "*"], 200))
       .children(confetti(12, "party")))
-    .child(say);
+    .when(!dozing || idleTalk, (e) => e.child(say));
 }
 
 // ---- bots: the panel's workers, seen from behind like seated() ------------
@@ -446,8 +477,9 @@ export function bot(lk, s, sleeping, working, id) {
 // stage 0 draws everything squashed at (cx, cy); stage 1 draws it blown out. The same ids in both
 // renders let transition() animate the change natively, so it plays once instead of looping.
 const BOOM = ["#ffd86a", "#f08a4a", "#c9302c", "#fff8e1", "#3a3a3a", "#e05a8a"];
-export function explosion(stage, cx, cy, id = "boom", big = false) {
-  const out = stage >= 1, k = big ? 1.5 : 1, n = big ? 24 : 16;
+// banner: what shipped ("PR MERGED", "DEPLOYED", "IT'S LIVE").
+export function explosion(stage, cx, cy, id = "boom", big = false, banner = "IT'S LIVE") {
+  const out = stage >= 1, k = big ? 1.5 : 1, n = big ? 32 : 24;
   const tr = (e, ms, delay = 0) => ["left", "top", "width", "height"]
     .reduce((el, p) => el.transition(p, { duration: ms, delay, easing: "ease-out" }), e);
   const fade = (e, delay, ms = 600) => e.transition("opacity", { duration: ms, delay, easing: "ease-in" });
@@ -468,5 +500,7 @@ export function explosion(stage, cx, cy, id = "boom", big = false) {
     .child(ball(110, "#c9302c", 0)).child(ball(78, "#f08a4a", 1)).child(ball(44, "#ffd86a", 2))
     .children(debris)
     .child(fade(txt("KABOOM!", 16, "#c9302c").absolute().left(cx - 28).top(cy - 70), 1600, 500).opacity(out ? 0 : 1)
-      .id(`${id}-word`));
+      .id(`${id}-word`))
+    .child(fade(div().absolute().left(cx - (banner.length * 8 + 16) / 2).top(cy - 104).px(6).py(2).bg("#3b2a1c").border(2).border_color("#ffd86a")
+      .child(txt(banner, 16, "#ffd86a")), 2000, 500).opacity(out ? 0 : 1).id(`${id}-banner`));
 }

@@ -3,6 +3,40 @@ import { v_flex, h_flex } from "gpui-base";
 import { run } from "herdr";
 import { ink, SCREEN, r, txt, look, bot, spectator, explosion, DEV_W, DEV_H } from "./art.js";
 
+const LONG_IDLE = 10 * 60 * 1000;
+
+// ---- developer mode -------------------------------------------------------
+// `herdr-app do sitandwatch.dev` shows a strip under the header: the numbers the mood is picked
+// from, and buttons to force a level, pin a lasting mood or fire any one-shot event.
+const DEV_MOODS = ["auto", "normal", "glazed", "glazedHard", "slumped", "multiBlocked", "pointAtBlocked", "allBlocked",
+  "fourthWall", "longIdle", "lateNight", "howMany"];
+const DEV_FIRE = ["finish", "phone", "yes?", "collapse", "burst", "streak", "error", "welcome", "levelUp", "linger",
+  "poke", "chaos", "pushed", "merged", "deployed"];
+// one-shots that take over the mood; the cosmetic ones (levelUp, linger, poke) don't
+const TAKES_OVER = ["finishPump", "blockedPhone", "collapse", "newAgentWelcome", "errorWince", "burstDance", "streak", "areYouSure"];
+
+function chip(label, on, onClick, key) {
+  return div().id(`dev-${key}`).px(3).bg(on ? "#ffd86a" : "#4a5263").cursor_pointer()
+    .on_click((_e, cx) => onClick(cx)).child(txt(label, 10, on ? ink : "#fff8e1"));
+}
+
+function devStrip(dev, mood, level, m) {
+  const min = (ms) => `${Math.floor((ms ?? 0) / 60000)}m`;
+  const live = Object.entries(m?.fx ?? {}).filter(([, v]) => v > 0).map(([k, v]) => `${k} ${v}`).join("  ");
+  const row = (chips) => h_flex().flex_wrap().gap(3).children(chips);
+  return v_flex().id("saw-devstrip").w_full().flex_none().px(6).py(4).gap(3).bg("#2b2f3a")
+    .child(h_flex().gap(6).child(txt(`${mood}  L${level}  ${m?.working ?? 0} working  ${m?.blocked ?? 0} blocked`, 10, "#7ee0a0"))
+      .child(div().flex_1()).child(chip(dev.open ? "hide" : "buttons", false, (cx) => dev.onOpen(cx), "open")))
+    .child(txt(`longest work ${min(m?.longestWorkingMs)}  blocked ${min(m?.longestBlockedMs)}  quiet ${min(m?.idleMs)}`, 10, "#9aa3b0"))
+    .child(txt(`you away ${min(m?.userIdleMs)}  seen ${m?.seen ?? 0}  ${m?.chaos ? "CHAOS" : ""}`, 10, "#9aa3b0"))
+    .when(!!live, (e) => e.child(txt(live, 10, "#ffd86a")))
+    .when(dev.open, (e) => e.child(row([txt("level", 10, "#9aa3b0"), chip("real", dev.level == null, (cx) => dev.onLevel(null, cx), "lv-real"),
+      ...[0, 1, 2, 3].map((n) => chip(String(n), dev.level === n, (cx) => dev.onLevel(n, cx), `lv-${n}`))]))
+    .child(row([txt("mood", 10, "#9aa3b0"), ...DEV_MOODS.map((k) => chip(k, (dev.mood ?? "auto") === k, (cx) => dev.onMood(k === "auto" ? null : k, cx), `md-${k}`))]))
+    .child(row([txt("fire", 10, "#9aa3b0"), ...DEV_FIRE.map((k) => chip(k, false, (cx) => dev.onFire(k, cx), `fx-${k}`))])));
+}
+
+
 // Sidebar version: a small grid of desks (one per agent) and the dev in the corner chair below,
 // getting more worked up the more agents are working.
 export function devLevel(list) {
@@ -16,17 +50,21 @@ const MIN = 60 * 1000;
 export function resolveMood(m, level) {
   const fx = m.fx ?? {};
   if (fx.burstDance > 0) return "burst";
+  if (fx.streak > 0) return "streak";
   if (fx.errorWince > 0) return "error";
   if (fx.collapse > 0) return "collapse";
   if (fx.finishPump > 0) return "finish";
+  if (m.blocked >= 2 && m.working === 0) return "allBlocked";
   if (m.blocked >= 2) return "multiBlocked";
   if (m.blocked >= 1 && m.longestBlockedMs > 2 * MIN) return "pointAtBlocked";
+  if (fx.areYouSure > 0) return "areYouSure";
   if (fx.blockedPhone > 0 || m.blocked === 1) return "blocked";
   if (fx.newAgentWelcome > 0) return "welcome";
   if (m.longestWorkingMs > 60 * MIN) return "slumped";
   if (m.longestWorkingMs > 30 * MIN) return "glazedHard";
   if (m.longestWorkingMs > 10 * MIN) return "glazed";
   if (m.userIdleMs > 5 * MIN && m.working > 0) return "fourthWall";
+  if (m.working === 0 && m.blocked === 0 && m.idleMs > LONG_IDLE) return "longIdle";
   if (level > 0 && isNight(m.hour)) return "lateNight";
   if (m.seen >= 10 && level > 0) return "howMany";
   return "normal";
@@ -44,9 +82,16 @@ function provider(list) {
   return new Set(kinds).size >= 2 ? "mixed" : null;
 }
 
-// A bouncing arrow beside a desk's monitor: red for "THAT one", green for a new desk.
+// The colour of whoever's doing most of the working, for tinting his scarf and finger.
+function dominantTint(list) {
+  const counts = {};
+  for (const a of list.filter((a) => a.status === "working")) { const c = look(a).shirt; counts[c] = (counts[c] ?? 0) + 1; }
+  return Object.entries(counts).sort((x, y) => y[1] - x[1])[0]?.[0] ?? null;
+}
+
+// A bouncing arrow beside a desk's monitor: red for "THAT one", green for a new desk, gold for a streak.
 function arrow(sw, kind, addr) {
-  const c = kind === "welcome" ? "#3fa86a" : "#c9302c", x = Math.round(sw / 2) - 28;
+  const c = kind === "welcome" ? "#3fa86a" : kind === "streak" ? "#e0b040" : "#c9302c", x = Math.round(sw / 2) - 28;
   return div().absolute().left(x).top(8).w(6).h(6).id(`pa-${addr}-${kind}`)
     .child(r(0, 0, 2, 6, c)).child(r(2, 1, 2, 4, c)).child(r(4, 2, 2, 2, c))
     .loop("left", { from: x - 3, to: x, period: 400 });
@@ -66,7 +111,10 @@ function desk(a, x, y, sw, rh, mark = null) {
     .child(r(Math.round(sw / 2) - 3, 24, 6, 3, "#2b2f3a"))
     .child(r(Math.round(sw / 2) - 26, 27, 52, 6, "#f0dcb0")).child(r(Math.round(sw / 2) - 26, 33, 52, 4, "#d4b27c"))
     .child(div().absolute().left(Math.round(sw / 2) - 12).top(28).child(body))
-    .when(!!mark, (e) => e.child(arrow(sw, mark, a.address)))
+    .when(!!mark && mark !== "areYouSure", (e) => e.child(arrow(sw, mark, a.address)))
+    // the meme: the agent asks, he answers from the chair
+    .when(mark === "areYouSure", (e) => e.child(div().absolute().left(0).top(0).w(sw).flex().justify_center()
+      .child(div().px(3).bg("#ffffff").border(1).border_color(ink).child(txt("Are you sure?", 10, ink)))))
     .when(rh >= 60, (e) => e.child(div().absolute().left(0).top(rh - 12).w(sw).flex().justify_center()
       .child(txt((a.tab_name ?? "").slice(0, 12), 10, a.focused ? "#fff8e1" : ink))));
 }
@@ -75,13 +123,18 @@ export function panel(list, party = false, opts = {}) {
   const sw = 84, rh = 56, ds = 3;
   const ship = opts.ship ?? null;                     // null, or the explosion's stage (0, 1)
   const m = opts.m ?? null;
-  const level = ship != null ? 3 : devLevel(list), panic = list.some((a) => a.status === "blocked");
+  const dev = opts.dev ?? null;
+  const level = ship != null ? 3 : dev?.level ?? devLevel(list), panic = list.some((a) => a.status === "blocked");
   const working = list.filter((a) => a.status === "working").length;
   const devW = DEV_W * ds, devH = DEV_H * ds, cornerH = devH + 26;
-  const mood = ship != null || !m ? "normal" : resolveMood(m, level);
-  const markAddr = mood === "pointAtBlocked" ? m.longestBlockedAddr : mood === "welcome" ? m.welcomeAddr : null;
+  // In developer mode a pinned mood wins, unless a one-shot (fired or real) is running.
+  const busyOneShot = TAKES_OVER.some((k) => (m?.fx?.[k] ?? 0) > 0);
+  const mood = ship != null || !m ? "normal" : dev?.mood && !busyOneShot ? dev.mood : resolveMood(m, level);
+  const markAddr = mood === "pointAtBlocked" ? m.longestBlockedAddr : mood === "welcome" ? m.welcomeAddr
+    : mood === "streak" ? m.streakAddr : mood === "areYouSure" ? m.aysAddr : null;
   const name = list.find((a) => a.address === markAddr)?.tab_name ?? "";
-  const glow = ["#ffb06a10", "#ffb06a22", "#ff8a6a30", "#ff5a5a44"][level];
+  const levelUp = (m?.fx?.levelUp ?? 0) > 0;          // a warm flash on reaching level 3
+  const glow = levelUp ? "#ffd27a77" : ["#ffb06a10", "#ffb06a22", "#ff8a6a30", "#ff5a5a44"][level];
   // Nothing here depends on the panel's measured size: flex does all the fitting,
   // so resizing the column never needs a re-render.
   return v_flex().id("saw-panel").size_full().overflow_hidden().bg("#e2a465")
@@ -92,6 +145,7 @@ export function panel(list, party = false, opts = {}) {
       .child(txt(opts.label ?? `${working}/${list.length} AT IT`, opts.label ? 10 : 12, "#fff8e1"))
       .child(div().flex_1())
       .child(txt(opts.label ? "STOP" : "DEMO", 10, opts.label ? "#ffd86a" : "#dfe6f0")))
+    .when(!!dev, (e) => e.child(devStrip(dev, mood, level, m)))
     .child(div().id("saw-desks").flex().flex_wrap().justify_center().content_start().flex_1().w_full().overflow_hidden().pt(6)
       .children(list.map((a) => desk(a, 0, 0, sw, rh, a.address === markAddr ? mood : null))))
     .child(div().flex().justify_center().w_full().h(cornerH).flex_none().bg(glow)
@@ -100,7 +154,13 @@ export function panel(list, party = false, opts = {}) {
         .child(r(devW + 10, 16, 3, devH - 6, "#3a3a3a")).child(r(devW + 3, 4, 17, 13, "#d97a3a"))
         .child(spectator(level, ds, "pdev", {
           panic, party, ship: ship != null, firstShip: !!opts.firstShip, mood, fx: m?.fx, name,
-          provider: provider(list), night: isNight(m?.hour ?? new Date().getHours()),
+          provider: provider(list), night: isNight(m?.hour ?? new Date().getHours()) || mood === "lateNight",
+          seed: m?.seed ?? 0, chaos: !!m?.chaos || (m?.working ?? 0) >= 6, tint: dominantTint(list),
+          linger: (m?.fx?.linger ?? 0) > 0, poke: m?.fx?.poke ?? 0, pokeLine: m?.pokeLine ?? "",
+          idleTalk: m?.idleTalk ?? Math.floor(Date.now() / 30000) % 6 === 0, idleN: Math.floor(Date.now() / 180000),
         }).absolute().left(0).top(16))
-        .when(ship != null, (e) => e.child(explosion(ship, devW / 2, cornerH / 2, `boom-${opts.shipKey ?? 0}`, !!opts.firstShip)))));
+        // clicking him: on top of the drawing, so the pixels can't swallow it
+        .child(div().id("saw-dev").absolute().left(0).top(16).w(devW).h(devH).cursor_pointer()
+          .when(!!opts.onDev, (e) => e.on_click((_e, cx) => opts.onDev(cx))))
+        .when(ship != null, (e) => e.child(explosion(ship, devW / 2, cornerH / 2, `boom-${opts.shipKey ?? 0}`, !!opts.firstShip, opts.banner)))));
 }
