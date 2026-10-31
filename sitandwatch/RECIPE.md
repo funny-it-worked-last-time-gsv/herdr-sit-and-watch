@@ -1,0 +1,112 @@
+# SitAndWatch
+
+A pixel-art sidebar panel for the Herdr app. Every agent is a little robot at a desk, and below
+them a developer sits in a red velvet armchair in the corner, watching them work. The more agents
+are working, the more worked up he gets: from an empty chair when nothing is running, through
+popcorn and a foam finger, to a standing ovation with confetti. He sobs when an agent needs you and
+sets off a party popper when one finishes.
+
+![SitAndWatch](preview.png)
+
+## What you see
+
+One mod, `sitandwatch`, drawn as a narrow panel (made for a sidebar about 260–560px wide). Pixel text
+is `PxPlus IBM VGA 8x16` (shipped in `mods/sitandwatch/fonts/`). Nothing is rounded. The panel is a
+flex column, top to bottom, on floor colour `#e2a465`:
+
+1. **Header**, 23px, `#8796b0` with a 3px `#7a4a28` bottom border: `N/M AT IT` (12px, `#fff8e1`,
+   working agents over all agents) on the left, `DEMO` (10px, `#dfe6f0`) on the right. In the demo
+   it grows to 30px, turns `#6b3f1f` and reads `DEMO i/6  <state>` (10px) with `STOP` in `#ffd86a`.
+2. **Desks**, filling the remaining height, `overflow_hidden`, 6px top padding: one 84×56 tile per
+   agent in a centred wrapping row. A tile holds a 32×20 `#2b2f3a` monitor (28×16 screen), a
+   6×3 stand, a 52px desk (`#f0dcb0` top 6px, `#d4b27c` front 4px) and a robot at scale 1.5 seen
+   from behind. The tab name (10px) shows only when tiles are at least 60px tall, so not by default.
+   - Screen colours: working `#1f4d3a` with three `#7ee0a0` 2px code lines growing and shrinking;
+     blocked `#a8322a` with a blinking `!`; done `#24406e`; idle `#36404c`.
+   - **Robot**, 16×20 art pixels, about 12 plain rectangles: shoulders in the agent's colour
+     (`claude #d97757`, `codex #2f3640`, `gemini #4f7dc9`, ... otherwise a random shirt colour
+     fixed by the address), a `#3d4454` chair back, `#2b2f3a` stem and base, a `#9aa3b0` head with
+     a `#c4ccd8` top edge, `#e0b040` ear bolts, a `#6e7684` jaw, a `#5a606c` neck and antenna. The
+     antenna tip is green `#5ee08a` and blinking while working, red `#e05a5a` otherwise, grey when
+     done (head lowered 3px).
+3. **Corner**, `devH + 26`px tall, background a glow that warms with the level (`#ffb06a10`,
+   `#ffb06a22`, `#ff8a6a30`, `#ff5a5a44`). Centred in it: a 10px `#5e1420` rug, a floor lamp
+   (3px `#3a3a3a` pole, 17×13 `#d97a3a` shade) and the **developer in the armchair**, 26×30 art
+   pixels at scale 3, 16px from the top.
+   - **Armchair**: back `#8a1f2e` with a 2px `#5e1420` border and five `#d9b25a` buttons, arms with
+     `#a8323f` tops, seat, `#4a2a14` legs.
+   - **Developer**, front view: brown hair `#3a2618`, skin `#f1c9a5`, grey `#6a6f7a` shirt, navy
+     `#2f3a5a` trousers, black shoes, a red-and-white `#c9302c`/`#f4f4f0` scarf round his neck, a
+     striped popcorn bucket on his lap. A speech bubble (white, 2px `#3b2a1c` border, 12px text)
+     sits above his right shoulder.
+
+## How it behaves
+
+The **level** comes from how many agents are working: 0 none, 1 one, 2 two or three, 3 four or
+more (or every agent, with at least two). The reactions stack:
+
+| Level | He does | He says |
+| --- | --- | --- |
+| 0 | Nothing: the chair is empty, a dent in the cushion, popcorn on the seat. | |
+| 1 | Bobs slowly, feeds himself popcorn, waves a yellow foam finger, taps a foot, eyebrows creep up, scarf flaps. | `ooh`, `nice`, `go on` |
+| 2 | Leans in clapping, eyes wide, brows high, cheeks flushed, sweat drops, bounces. | `look at 'em go`, `go on son!`, `ooh yes` |
+| 3 | Standing ovation out of the chair: eyes bulging, jaw dropped, head thrown back, foam finger and fist pumping, popcorn flying, confetti, shaking. | `SHIP IT!`, `!!!`, `MORE AGENTS`, `YES LADS` |
+
+The faces at levels 1–3 follow the escalating chair-reaction meme: brows creeping up, eyes
+widening, eyes bulging with the head thrown back.
+
+- **An agent finishes** (working → done): a party popper and a burst of confetti for 3s, `POP!`,
+  `GET IN!`, `SHIPPED!`.
+- **An agent is blocked**: the mood drops to at most level 1, a sad mouth, a tear, the popcorn
+  spilled on the floor, `wah wah`, `they need me?!`, `noooo`.
+- **Clicking a desk** focuses that agent (`agent.focus`).
+- **Demo**: clicking the header, or `herdr-app do sitandwatch.demo`, cycles six labelled states every
+  5s with fake desks: empty chair, level 1, level 2, level 3, finished, blocked. Again to stop.
+- Every motion is a native `loop` or `frames`; nothing animates when nothing is happening.
+- No keys and no hovers: it takes no keys, so there is no `keys.json` to merge.
+
+## Built from
+
+- `mods/sitandwatch/mod.json`: `{ "place": "left", "size": 280, "title": "SitAndWatch" }`.
+- `mods/sitandwatch/panel.js`: the panel (`panel(list, party, opts)`), desks and `devLevel(list)`.
+- `mods/sitandwatch/art.js`: sprites as rows of palette letters (`sprite(rows, palette, s)` draws one
+  `div` per colour run), `bot()` from plain rectangles, `spectator(level, s, id, { panic, party })`.
+- `mods/sitandwatch/main.js`: one view, its job picked by `props().role`: `panel` (the default), or
+  `office`, `rail` and `pane` for a full-width office layout like the one it is based on (the
+  office draws the same developer in the bottom-left corner).
+- The list is `agents()` plus background helpers (`hc run --bg`), which are not in `agents()`:
+  `hc(["ls", "--json"])` every 10s in a `cx.spawn`, live terminals with a status, merged by
+  address. A 1s timer advances the demo and ends the party.
+- Commands: `sitandwatch.demo` through `nextCommand()`. Calls `agents()`, `hc`, `run("agent.focus")`.
+  No network, no `exec`, no files outside its folder.
+- Based on [zuccs/herdr-office-layout](https://github.com/zuccs/herdr-office-layout) (MIT): its
+  `art.js` helpers, palette, font and office view.
+
+## Watch out
+
+- Herdr cuts a render off ("This view could not be re-rendered ... interrupted") when it runs too
+  long. Draw the robots with a dozen rectangles, not `sprite()`: at one `div` per colour run, seven
+  sprite robots and the developer were enough to hit it. Several animated developers in one view
+  hit it too, so the demo shows one state at a time.
+- Don't call `terminals()` during render: it can be slow (remote machines) and gets the render cut
+  off. Poll `hc ls --json` off the render path.
+- Don't lay the panel out from a measured height (`on_size_change` + `cx.notify()`): Herdr's error
+  banner changes the height, which re-renders, which removes the banner, and round it goes. Use
+  flex: fixed header, `flex_1` desks, fixed-height corner.
+- `loop` periods must be at least 100ms. Loops need a stable `.id()`; put the level in the id so
+  they restart at the new speed when it changes.
+- `herdr-app check` renders the default role, the panel, with no agents: it can't show levels 1–3.
+  Use the demo.
+- Claude Code's own subagents (its Agent tool) run inside one terminal, so they don't get desks.
+- More than about two rows of desks are hidden behind the corner in a short panel.
+
+## Done when
+
+- With the mod in a sidebar and no agent working, the chair is empty.
+- Starting an agent brings the developer in with popcorn and a foam finger; four working agents
+  get a standing ovation with confetti.
+- An agent asking for permission turns its screen red and makes him cry `wah wah` over spilled
+  popcorn; an agent finishing sets off the party popper.
+- `herdr-app do sitandwatch.demo` cycles all six states with labels, and `herdr-app status` reports no
+  errors throughout.
+- Clicking a desk focuses that agent.
