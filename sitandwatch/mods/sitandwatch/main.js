@@ -22,7 +22,9 @@ const DEMO_STATES = [
   ["Level 3: four+ (or all) working", ["working", "working", "working", "working", "working", "done"], false],
   ["Agent finished: party popper", ["working", "done", "idle", "idle", "idle", "idle"], true],
   ["Agent blocked: wah wah", ["working", "working", "blocked", "idle", "idle", "idle"], false],
+  ["Shipped: KABOOM", ["done", "done", "idle", "idle", "idle", "idle"], false, true],
 ];
+const SHIP_MS = 2600; // how long the explosion stays on screen
 const DEMO_MS = 5000;
 const THOUGHTS = ["?", "!", "♪", "♥", "...", "☼", "$", "#"];
 const SPOTS = ["cooler", "cooler", "shelfL", "shelfR", "window", "door", "plant", "floor", "floor", "chat", "chat"];
@@ -101,7 +103,22 @@ export default class Office extends View {
         if (partyOver) this.partyUntil = 0;
         if (this.demoAt != null || partyOver) cx.notify();
       });
-      cx.spawn(async (cx) => { for (;;) { if ((await nextCommand()) === "demo") { this.toggleDemo(); cx.notify(); } } });
+      // `herdr-app do sitandwatch.ship` (sent by the Claude Code hook after a push) sets off the explosion:
+      // stage 0 draws it squashed, stage 1 a moment later lets transition() blow it out, then it clears.
+      this.ship = null;
+      cx.spawn(async (cx) => {
+        for (;;) {
+          const c = await nextCommand();
+          if (c === "demo") { this.toggleDemo(); cx.notify(); }
+          if (c === "ship") {
+            const key = Date.now();
+            this.ship = { key, stage: 0 };
+            cx.notify();
+            cx.timer.after(60, (cx) => { if (this.ship?.key === key) { this.ship.stage = 1; cx.notify(); } });
+            cx.timer.after(SHIP_MS, (cx) => { if (this.ship?.key === key) { this.ship = null; cx.notify(); } });
+          }
+        }
+      });
     }
     if (roleOf(props()) !== "office") return;
     this.roomView = cx.new(Room, this.roomProps());
@@ -358,15 +375,17 @@ export default class Office extends View {
       const now = Date.now();
       const toggle = (cx) => { this.toggleDemo(); cx.notify(); };
       if (this.demoAt != null) {
-        const i = Math.floor((now - this.demoAt) / DEMO_MS) % DEMO_STATES.length, [label, sts, party] = DEMO_STATES[i];
+        const t = now - this.demoAt, i = Math.floor(t / DEMO_MS) % DEMO_STATES.length, [label, sts, party, ship] = DEMO_STATES[i];
+        // The 1s timer re-renders the demo: squashed for the first second, blown out until 3s, then gone.
+        const into = t % DEMO_MS, stage = !ship || into >= 3000 ? null : into < 1000 ? 0 : 1;
         const fake = sts.map((status, j) => ({ address: `demo-${j}`, status, tab_name: `bot ${j + 1}`, program: null, focused: false }));
-        return panel(fake, party, { label: `DEMO ${i + 1}/${DEMO_STATES.length}  ${label}`, toggle });
+        return panel(fake, party, { label: `DEMO ${i + 1}/${DEMO_STATES.length}  ${label}`, toggle, ship: stage, shipKey: Math.floor(t / DEMO_MS) });
       }
       // An agent going working -> done sets off the party popper for 3s; the 1s timer clears it.
       const prev = this.prevStatus ?? {};
       if (list.some((a) => prev[a.address] === "working" && a.status === "done")) this.partyUntil = now + 3000;
       this.prevStatus = Object.fromEntries(list.map((a) => [a.address, a.status]));
-      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle }); }
+      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key }); }
       catch (e) { return div().p(8).bg("#fff").child(txt(`ERR ${e?.message ?? e}`, 12, "#a8322a")); }
     }
     if (role === "rail") {

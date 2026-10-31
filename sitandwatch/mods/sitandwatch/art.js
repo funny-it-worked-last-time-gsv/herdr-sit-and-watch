@@ -215,8 +215,9 @@ const DEV = { hair: "#3a2618", skin: "#f1c9a5", shirt: "#6a6f7a", pants: "#2f3a5
 const CHAIR = { a: "#8a1f2e", d: "#5e1420", l: "#a8323f", b: "#d9b25a", wood: "#4a2a14" };
 
 export function spectator(level, s, id, mood) {
-  // mood: { panic: an agent is blocked, party: an agent just finished }. A bare boolean means panic.
-  const { panic = false, party = false } = typeof mood === "object" && mood ? mood : { panic: !!mood };
+  // mood: { panic: an agent is blocked, party: an agent just finished, ship: something was pushed }.
+  // A bare boolean means panic.
+  const { panic = false, party = false, ship = false } = typeof mood === "object" && mood ? mood : { panic: !!mood };
   const R = (x, y, w, h, c) => r(x * s, y * s, w * s, h * s, c);
   const L = panic ? Math.min(level, 1) : level;        // a blocked agent kills the mood
   const up = L === 3 ? 6 : 0;                           // standing ovation: out of the chair
@@ -290,10 +291,11 @@ export function spectator(level, s, id, mood) {
     .id(`${id}-conf-${tag}-${i}`).loop("top", { from: (-10 - (i % 3) * 3) * s, to: (20 + (i % 4) * 2) * s, period: 900 + (i * 137) % 600, easing: "linear" }));
 
   const lines = panic ? ["wah wah", "they need me?!", "noooo"]
+    : ship ? ["KABOOM!", "IT'S LIVE!", "LEGENDS"]
     : party ? ["POP!", "GET IN!", "SHIPPED!"]
     : [["...", "zzz", "*yawn*"], ["ooh", "nice", "go on"], ["look at 'em go", "go on son!", "ooh yes"], ["SHIP IT!", "!!!", "MORE AGENTS", "YES LADS"]][L];
   const say = div().absolute().left(16 * s).top((-9 - up) * s).px(4).py(2).bg("#ffffff").border(2).border_color(ink)
-    .child(txt(lines[0], 12, panic ? "#a8322a" : ink).id(`${id}-say-${L}-${panic}-${party}`).frames(lines, panic ? 1200 : party ? 600 : [2400, 1600, 900, 450][L]));
+    .child(txt(lines[0], 12, panic ? "#a8322a" : ink).id(`${id}-say-${L}-${panic}-${party}-${ship}`).frames(lines, panic ? 1200 : party || ship ? 600 : [2400, 1600, 900, 450][L]));
 
   const chair = () => div().relative().w(DEV_W * s).h(DEV_H * s)
     .child(R(2, 3, 22, 16, CHAIR.a).border(2).border_color(CHAIR.d))
@@ -342,4 +344,33 @@ export function bot(lk, s, sleeping, working, id) {
     .child(R(5, 6 + t, 6, 1, "#6e7684")).child(R(6, 7 + t, 4, 1, "#5a606c")) // jaw, neck
     .child(R(7.75, 1 + t, 0.5, 1, "#5a606c"))
     .child(tip);
+}
+
+// ---- the ship explosion ---------------------------------------------------
+// stage 0 draws everything squashed at (cx, cy); stage 1 draws it blown out. The same ids in both
+// renders let transition() animate the change natively, so it plays once instead of looping.
+const BOOM = ["#ffd86a", "#f08a4a", "#c9302c", "#fff8e1", "#3a3a3a", "#e05a8a"];
+export function explosion(stage, cx, cy, id = "boom") {
+  const out = stage >= 1;
+  const tr = (e, ms, delay = 0) => ["left", "top", "width", "height"]
+    .reduce((el, p) => el.transition(p, { duration: ms, delay, easing: "ease-out" }), e);
+  const fade = (e, delay, ms = 600) => e.transition("opacity", { duration: ms, delay, easing: "ease-in" });
+  // fireball: three nested squares that grow, then fade
+  const ball = (size, c, i) => {
+    const z = out ? size : 4;
+    return fade(tr(r(cx - z / 2, cy - z / 2, z, z, c), 420 + i * 60), 700 + i * 120).opacity(out ? 0 : 1).id(`${id}-ball${i}`);
+  };
+  // debris: chunks flung outward in a ring, falling a little as they go
+  const debris = Array.from({ length: 16 }, (_, i) => {
+    const a = (i / 16) * Math.PI * 2, d = 90 + ((i * 37) % 60), z = 3 + (i % 3) * 2;
+    const x = out ? cx + Math.cos(a) * d : cx, y = out ? cy + Math.sin(a) * d * 0.8 + 30 : cy;
+    return fade(tr(r(x, y, z, z, BOOM[i % BOOM.length]), 900), 900, 700).opacity(out ? 0 : 1).id(`${id}-deb${i}`);
+  });
+  return div().absolute().left(0).top(0).size_full()
+    // white flash over everything, gone in a blink
+    .child(fade(r(-600, -1200, 2000, 2000, "#fff8e1"), 0, 350).opacity(out ? 0 : 0.85).id(`${id}-flash`))
+    .child(ball(110, "#c9302c", 0)).child(ball(78, "#f08a4a", 1)).child(ball(44, "#ffd86a", 2))
+    .children(debris)
+    .child(fade(txt("KABOOM!", 16, "#c9302c").absolute().left(cx - 28).top(cy - 70), 1600, 500).opacity(out ? 0 : 1)
+      .id(`${id}-word`));
 }

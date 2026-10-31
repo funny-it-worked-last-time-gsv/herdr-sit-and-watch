@@ -57,11 +57,16 @@ widening, eyes bulging with the head thrown back.
 
 - **An agent finishes** (working → done): a party popper and a burst of confetti for 3s, `POP!`,
   `GET IN!`, `SHIPPED!`.
+- **Something ships** (`herdr-app do sitandwatch.ship`, sent by the Claude Code hook in `hooks/`
+  after `git push`, `gh pr merge` or a production `vercel` deploy): a full explosion for about 2.6s.
+  A white flash, a fireball of three growing squares (`#c9302c`, `#f08a4a`, `#ffd86a`), 16 bits of
+  debris flung outward and a `KABOOM!` caption. He jumps to a standing ovation: `KABOOM!`,
+  `IT'S LIVE!`, `LEGENDS`.
 - **An agent is blocked**: the mood drops to at most level 1, a sad mouth, a tear, the popcorn
   spilled on the floor, `wah wah`, `they need me?!`, `noooo`.
 - **Clicking a desk** focuses that agent (`agent.focus`).
-- **Demo**: clicking the header, or `herdr-app do sitandwatch.demo`, cycles six labelled states every
-  5s with fake desks: empty chair, level 1, level 2, level 3, finished, blocked. Again to stop.
+- **Demo**: clicking the header, or `herdr-app do sitandwatch.demo`, cycles seven labelled states every
+  5s with fake desks: empty chair, level 1, level 2, level 3, finished, blocked, shipped. Again to stop.
 - Every motion is a native `loop` or `frames`; nothing animates when nothing is happening.
 - No keys and no hovers: it takes no keys, so there is no `keys.json` to merge.
 
@@ -77,7 +82,7 @@ widening, eyes bulging with the head thrown back.
 - The list is `agents()` plus background helpers (`hc run --bg`), which are not in `agents()`:
   `hc(["ls", "--json"])` every 10s in a `cx.spawn`, live terminals with a status, merged by
   address. A 1s timer advances the demo and ends the party.
-- Commands: `sitandwatch.demo` through `nextCommand()`. Calls `agents()`, `hc`, `run("agent.focus")`.
+- Commands: `sitandwatch.demo` and `sitandwatch.ship` through `nextCommand()`. Calls `agents()`, `hc`, `run("agent.focus")`.
   No network, no `exec`, no files outside its folder.
 - Based on [zuccs/herdr-office-layout](https://github.com/zuccs/herdr-office-layout) (MIT): its
   `art.js` helpers, palette, font and office view.
@@ -93,6 +98,9 @@ widening, eyes bulging with the head thrown back.
 - Don't lay the panel out from a measured height (`on_size_change` + `cx.notify()`): Herdr's error
   banner changes the height, which re-renders, which removes the banner, and round it goes. Use
   flex: fixed header, `flex_1` desks, fixed-height corner.
+- `loop` always swings there and back, so it can't play a one-time burst. The explosion renders
+  squashed (stage 0), then 60ms later blown out (stage 1) with the same ids, and `transition()`
+  animates the change once.
 - `loop` periods must be at least 100ms. Loops need a stable `.id()`; put the level in the id so
   they restart at the new speed when it changes.
 - `herdr-app check` renders the default role, the panel, with no agents: it can't show levels 1–3.
@@ -107,6 +115,21 @@ widening, eyes bulging with the head thrown back.
   get a standing ovation with confetti.
 - An agent asking for permission turns its screen red and makes him cry `wah wah` over spilled
   popcorn; an agent finishing sets off the party popper.
-- `herdr-app do sitandwatch.demo` cycles all six states with labels, and `herdr-app status` reports no
+- `herdr-app do sitandwatch.demo` cycles all seven states with labels, and `herdr-app status` reports no
   errors throughout.
 - Clicking a desk focuses that agent.
+- `herdr-app do sitandwatch.ship`, or a `git push` from Claude Code with the hook installed, sets off
+  the explosion, which clears by itself.
+
+## Ship hook
+
+`hooks/sitandwatch-ship.py` is a Claude Code `PostToolUse` hook. Copy it to `~/.claude/hooks/` and
+add to `~/.claude/settings.json`:
+
+```json
+"PostToolUse": [
+  { "matcher": "Bash", "hooks": [{ "type": "command", "command": "~/.claude/hooks/sitandwatch-ship.py", "async": true, "timeout": 10 }] }
+]
+```
+
+`is_ship()` in the script decides what counts as shipping.
