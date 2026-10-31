@@ -1,7 +1,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run } from "herdr";
-import { ink, SCREEN, r, txt, look, bot, spectator, DEV_W, DEV_H } from "./art.js";
+import { ink, SCREEN, r, txt, look, bot, spectator, explosion, DEV_W, DEV_H } from "./art.js";
 
 // Sidebar version: a small grid of desks (one per agent) and the dev in the corner chair below,
 // getting more worked up the more agents are working.
@@ -30,7 +30,8 @@ function desk(a, x, y, sw, rh) {
 
 export function panel(list, party = false, opts = {}) {
   const sw = 84, rh = 56, ds = 3;
-  const level = devLevel(list), panic = list.some((a) => a.status === "blocked");
+  const ship = opts.ship ?? null;                     // null, or the explosion's stage (0, 1)
+  const level = ship != null ? 3 : devLevel(list), panic = list.some((a) => a.status === "blocked");
   const working = list.filter((a) => a.status === "working").length;
   const devW = DEV_W * ds, devH = DEV_H * ds, cornerH = devH + 26;
   const glow = ["#ffb06a10", "#ffb06a22", "#ff8a6a30", "#ff5a5a44"][level];
@@ -50,5 +51,6 @@ export function panel(list, party = false, opts = {}) {
       .child(div().relative().w(devW).h(cornerH)
         .child(r(-12, cornerH - 16, devW + 24, 10, "#5e1420"))
         .child(r(devW + 10, 16, 3, devH - 6, "#3a3a3a")).child(r(devW + 3, 4, 17, 13, "#d97a3a"))
-        .child(spectator(level, ds, "pdev", { panic, party }).absolute().left(0).top(16))));
+        .child(spectator(level, ds, "pdev", { panic, party, ship: ship != null }).absolute().left(0).top(16))
+        .when(ship != null, (e) => e.child(explosion(ship, devW / 2, cornerH / 2, `boom-${opts.shipKey ?? 0}`)))));
 }
