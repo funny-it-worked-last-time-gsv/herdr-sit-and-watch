@@ -14,6 +14,9 @@ const DEMO = [["working", "fix login"], ["blocked", "migrate db"], ["done", "wri
     const space_name = i < 5 ? "web" : i < 9 ? "api" : "infra";
     return { address: `demo${i}`, status, tab_name, space: space_name, space_name, title: "", program: null, focused: i === 0 };
   });
+const MIN = 60 * 1000;
+const W1 = ["working", "idle", "idle", "idle", "idle", "idle"];
+const left = (n, t) => Math.max(0, n - t);
 // Panel demo: one state at a time (several animated spectators at once is too slow for one render).
 const DEMO_STATES = [
   ["Nothing running: empty chair", ["idle", "idle", "idle", "idle", "idle", "idle"], false],
@@ -23,7 +26,22 @@ const DEMO_STATES = [
   ["Agent finished: party popper", ["working", "done", "idle", "idle", "idle", "idle"], true],
   ["Agent blocked: wah wah", ["working", "working", "blocked", "idle", "idle", "idle"], false],
   ["Shipped: KABOOM", ["done", "done", "idle", "idle", "idle", "idle"], false, true],
+  // m(tick) overrides the metrics the mood is picked from, for that second of the state
+  ["Working 30+ min: glazed over", W1, false, false, () => ({ longestWorkingMs: 35 * MIN })],
+  ["Finish: fist pump", ["working", "done", "idle", "idle", "idle", "idle"], true, false, (t) => ({ fx: { finishPump: left(3, t) } })],
+  ["Blocked: phone", ["working", "blocked", "idle", "idle", "idle", "idle"], false, false, (t) => ({ fx: { blockedPhone: left(4, t) } })],
+  ["All done: collapse", ["done", "done", "done", "idle", "idle", "idle"], false, false, (t) => ({ fx: { collapse: left(5, t) } })],
+  ["Two blocked: which one?!", ["working", "blocked", "blocked", "idle", "idle", "idle"], false, false],
+  ["Blocked 2+ min: THAT one", ["working", "blocked", "idle", "idle", "idle", "idle"], false, false,
+    () => ({ longestBlockedMs: 3 * MIN, longestBlockedAddr: "demo-1" })],
+  ["3 done in a minute: burst", ["done", "done", "done", "working", "idle", "idle"], true, false, (t) => ({ fx: { burstDance: left(6, t) } })],
+  ["Agent crashed: oh no", W1, false, false, (t) => ({ fx: { errorWince: left(4, t) } })],
+  ["New agent: welcome", W1, false, false, (t) => ({ fx: { newAgentWelcome: left(3, t) }, welcomeAddr: "demo-5" })],
+  ["After 10pm: nightcap", W1, false, false, () => ({ hour: 23 })],
+  ["Ignored 5+ min: fourth wall", W1, false, false, () => ({ userIdleMs: 6 * MIN })],
+  ["10+ agents seen: how many?", ["working", "working", "idle", "idle", "idle", "idle"], false, false, () => ({ seen: 12 })],
 ];
+const ONE_SHOTS = ["finishPump", "blockedPhone", "collapse", "newAgentWelcome", "errorWince", "burstDance"];
 const SHIP_MS = 2600; // how long the explosion stays on screen
 const DEMO_MS = 5000;
 const THOUGHTS = ["?", "!", "♪", "♥", "...", "☼", "$", "#"];
@@ -84,24 +102,51 @@ export default class Office extends View {
       this.helpers = [];
       const poll = (cx) => cx.spawn(async () => {
         try {
-          const out = await hc(["ls", "--json"]);
-          const ts = JSON.parse(out.stdout).terminals ?? [];
-          const next = ts.filter((t) => t.status && t.state === "live")
-            .map((t) => ({ address: t.address, status: t.status, tab_name: t.name ?? t.address, program: null, focused: false }));
+          const out = await hc(["ls", "--all", "--json"]);
+          const all = JSON.parse(out.stdout).terminals ?? [];
+          const ts = all.filter((t) => t.state === "live");
+          const next = ts.filter((t) => t.status)
+            .map((t) => ({ address: t.address, status: t.status, tab_name: t.name ?? t.address, program: null, app: t.agent ?? null, focused: false }));
+          const m = this.m;
+          // An agent we were showing that has since exited with a non-zero code: wince.
+          const fin = all.filter((t) => t.state === "finished");
+          if (m.finishedSeen && fin.some((t) => !m.finishedSeen.has(t.address) && m.seen.has(t.address) && (t.exit_code ?? 0) > 0)) {
+            m.errorWince = 4;
+            cx.notify();
+          }
+          m.finishedSeen = new Set(fin.map((t) => t.address));
+          // When each busy agent entered its status, from hc: survives reloads, unlike our own stamps.
+          for (const t of ts.filter((t) => t.status === "working" || t.status === "blocked")) {
+            try {
+              const g = JSON.parse((await hc(["get", t.address, "--json"])).stdout);
+              if (g.status_ms) m.hcSince[t.address] = { status: g.status?.state ?? t.status, at: g.status_ms };
+            } catch {}
+          }
           const key = JSON.stringify(next);
           const partyOver = this.partyUntil && Date.now() > this.partyUntil;
           if (partyOver) this.partyUntil = 0;
           if (key !== this.helpersKey || partyOver) { this.helpersKey = key; this.helpers = next; cx.notify(); }
         } catch {}
       });
+      // What the mood is picked from (see trackMetrics); one-shots count down in ticks of the 1s timer.
+      this.m = {
+        local: {}, hcSince: {}, finishes: [], seen: new Set(), finishedSeen: null, prevAddrs: null,
+        prevWorking: 0, welcomeAddr: null, lastUser: Date.now(), lastFocus: undefined, bornAt: Date.now(), ships: 0,
+        ...Object.fromEntries(ONE_SHOTS.map((k) => [k, 0])),
+      };
       poll(cx);
       cx.timer.every(10000, poll);
       // demo: `herdr-app do sitandwatch.demo` or a click on the header toggles it
       this.demoAt = null;
+      // Re-render while a one-shot runs, and every 15s anyway so the time-based moods (glazed,
+      // blocked too long, ignored, late night) catch up. Nothing loops unless a mood draws it.
+      let ticks = 0;
       cx.timer.every(1000, (cx) => {
         const partyOver = this.partyUntil && Date.now() > this.partyUntil;
         if (partyOver) this.partyUntil = 0;
-        if (this.demoAt != null || partyOver) cx.notify();
+        let changed = false;
+        for (const k of ONE_SHOTS) if (this.m[k] > 0) { this.m[k]--; changed = true; }
+        if (this.demoAt != null || partyOver || changed || ++ticks % 15 === 0) cx.notify();
       });
       // `herdr-app do sitandwatch.ship` (sent by the Claude Code hook after a push) sets off the explosion:
       // stage 0 draws it squashed, stage 1 a moment later lets transition() blow it out, then it clears.
@@ -112,7 +157,8 @@ export default class Office extends View {
           if (c === "demo") { this.toggleDemo(); cx.notify(); }
           if (c === "ship") {
             const key = Date.now();
-            this.ship = { key, stage: 0 };
+            this.m.ships++;
+            this.ship = { key, stage: 0, first: this.m.ships === 1 };
             cx.notify();
             cx.timer.after(60, (cx) => { if (this.ship?.key === key) { this.ship.stage = 1; cx.notify(); } });
             cx.timer.after(SHIP_MS, (cx) => { if (this.ship?.key === key) { this.ship = null; cx.notify(); } });
@@ -123,6 +169,45 @@ export default class Office extends View {
     if (roleOf(props()) !== "office") return;
     this.roomView = cx.new(Room, this.roomProps());
     cx.timer.every(250, (cx) => { this.syncRoom(); if (this.tick()) cx.notify(); });
+  }
+
+  // Run on every panel render: durations, edges against the previous statuses, the one-shots they
+  // start. Returns what resolveMood() in panel.js reads.
+  trackMetrics(list, prev, first) {
+    const m = this.m, now = Date.now();
+    // When each agent entered its status: hc's status_ms when it agrees, else when we saw it change.
+    const local = {};
+    for (const a of list) local[a.address] = m.local[a.address]?.status === a.status ? m.local[a.address] : { status: a.status, at: now };
+    m.local = local;
+    const since = (a) => (m.hcSince[a.address]?.status === a.status ? m.hcSince[a.address].at : null) ?? local[a.address].at;
+    const working = list.filter((a) => a.status === "working"), blocked = list.filter((a) => a.status === "blocked");
+    const longestWorkingMs = Math.max(0, ...working.map((a) => now - since(a)));
+    let longestBlockedMs = 0, longestBlockedAddr = null;
+    for (const a of blocked) if (now - since(a) > longestBlockedMs) { longestBlockedMs = now - since(a); longestBlockedAddr = a.address; }
+
+    const finished = list.some((a) => prev[a.address] === "working" && a.status === "done");
+    if (finished) { m.finishPump = 3; m.finishes.push(now); }
+    m.finishes = m.finishes.filter((t) => now - t < MIN);
+    if (finished && m.finishes.length >= 3 && !m.burstDance) m.burstDance = 6;
+    if (!first && list.some((a) => a.status === "blocked" && prev[a.address] !== "blocked")) m.blockedPhone = 4;
+    if (m.prevWorking >= 2 && working.length === 0) m.collapse = 5;
+    m.prevWorking = working.length;
+    // A desk that wasn't there before. Skip the first 15s: background helpers arrive with the first poll.
+    if (m.prevAddrs && now - m.bornAt > 15000) {
+      const fresh = list.find((a) => !m.prevAddrs.has(a.address));
+      if (fresh) { m.newAgentWelcome = 3; m.welcomeAddr = fresh.address; }
+    }
+    m.prevAddrs = new Set(list.map((a) => a.address));
+    for (const a of list) m.seen.add(a.address);
+    // Switching agents counts as the user being around (header clicks count too).
+    const focus = list.find((a) => a.focused)?.address ?? null;
+    if (focus !== m.lastFocus) { m.lastFocus = focus; m.lastUser = now; }
+
+    return {
+      working: working.length, blocked: blocked.length, longestWorkingMs, longestBlockedMs, longestBlockedAddr,
+      welcomeAddr: m.welcomeAddr, userIdleMs: now - m.lastUser, hour: new Date().getHours(), seen: m.seen.size,
+      fx: Object.fromEntries(ONE_SHOTS.map((k) => [k, m[k]])),
+    };
   }
 
   toggleDemo() { this.demoAt = this.demoAt == null ? Date.now() : null; }
@@ -373,19 +458,23 @@ export default class Office extends View {
         list = [...list, ...extra];
       }
       const now = Date.now();
-      const toggle = (cx) => { this.toggleDemo(); cx.notify(); };
+      const toggle = (cx) => { this.m.lastUser = Date.now(); this.toggleDemo(); cx.notify(); };
       if (this.demoAt != null) {
-        const t = now - this.demoAt, i = Math.floor(t / DEMO_MS) % DEMO_STATES.length, [label, sts, party, ship] = DEMO_STATES[i];
+        const t = now - this.demoAt, i = Math.floor(t / DEMO_MS) % DEMO_STATES.length, [label, sts, party, ship, mAt] = DEMO_STATES[i];
         // The 1s timer re-renders the demo: squashed for the first second, blown out until 3s, then gone.
         const into = t % DEMO_MS, stage = !ship || into >= 3000 ? null : into < 1000 ? 0 : 1;
         const fake = sts.map((status, j) => ({ address: `demo-${j}`, status, tab_name: `bot ${j + 1}`, program: null, focused: false }));
-        return panel(fake, party, { label: `DEMO ${i + 1}/${DEMO_STATES.length}  ${label}`, toggle, ship: stage, shipKey: Math.floor(t / DEMO_MS) });
+        const count = (st) => sts.filter((x) => x === st).length;
+        const m = { working: count("working"), blocked: count("blocked"), longestWorkingMs: 0, longestBlockedMs: 0, longestBlockedAddr: null,
+          welcomeAddr: null, userIdleMs: 0, hour: 12, seen: sts.length, fx: {}, ...(mAt?.(Math.floor(into / 1000)) ?? {}) };
+        return panel(fake, party, { label: `DEMO ${i + 1}/${DEMO_STATES.length}  ${label}`, toggle, ship: stage, shipKey: Math.floor(t / DEMO_MS), m });
       }
       // An agent going working -> done sets off the party popper for 3s; the 1s timer clears it.
       const prev = this.prevStatus ?? {};
       if (list.some((a) => prev[a.address] === "working" && a.status === "done")) this.partyUntil = now + 3000;
+      const m = this.trackMetrics(list, prev, !this.prevStatus);
       this.prevStatus = Object.fromEntries(list.map((a) => [a.address, a.status]));
-      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key }); }
+      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, m }); }
       catch (e) { return div().p(8).bg("#fff").child(txt(`ERR ${e?.message ?? e}`, 12, "#a8322a")); }
     }
     if (role === "rail") {

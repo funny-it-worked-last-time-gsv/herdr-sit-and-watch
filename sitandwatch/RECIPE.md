@@ -62,27 +62,81 @@ widening, eyes bulging with the head thrown back.
   A white flash, a fireball of three growing squares (`#c9302c`, `#f08a4a`, `#ffd86a`), 16 bits of
   debris flung outward and a `KABOOM!` caption. He jumps to a standing ovation: `KABOOM!`,
   `IT'S LIVE!`, `LEGENDS`.
+### Moods
+
+On top of the level, `resolveMood(m, level)` in `panel.js` picks one dominant mood, first match
+wins, and `spectator()` draws that one pose and speech set. `m` comes from `trackMetrics()` in
+`main.js` (or a demo state):
+
+| Mood | When | He does | Says |
+| --- | --- | --- | --- |
+| `burst` | 3 finishes within 60s (6 ticks) | level 3 pose, both arms pumping at 150ms, 14 more confetti | `they're flying!`, `yes lads` |
+| `error` | an agent we showed exited with code > 0 (4 ticks) | hands on head, eyes squeezed, grimace, sweat, popcorn spilled, small shake | `oh no`, `that's not good` |
+| `collapse` | 2+ working dropped to none (5 ticks) | see below | `ahh`, `job done` |
+| `finish` | working to done (3 ticks) | the fist pump below | `GET IN!` |
+| `multiBlocked` | 2+ blocked | both hands up, head whipping left and right | `which one?!`, `too many` |
+| `pointAtBlocked` | one blocked 2+ min | half out of the chair, foam finger up reading `THAT`, red arrow at that desk | `THAT one`, `<tab>!` |
+| `blocked` | one blocked | the phone, then the blocked pose below | |
+| `welcome` | a new desk (3 ticks; not in the first 15s) | a nod, `hi` on the finger, green arrow at the new desk | `welcome`, `hi <tab>` |
+| `slumped` / `glazedHard` / `glazed` | longest working 60 / 30 / 10+ min | glazed, below; pillow from 30, lids lower at 60 | `I have a life too`, `hmm`, `still going...` |
+| `fourthWall` | agents working, no focus change or header click for 5 min | wide eyes, one brow up, eating slowly | `you still watching?` |
+| `lateNight` | 10pm to 6am, someone working | level pose | `still at it?` |
+| `howMany` | 10+ agents seen since the panel started | eyes darting | `how many are there?` |
+| `normal` | otherwise | level pose | level lines |
+
+- **Nightcap** (blue with a white bobble) whenever it's 10pm to 6am and he's in the chair.
+- **Provider flavour**, in the `normal` mood only, from `program.key` (or hc's `agent`): more than
+  half Claude, a slow nod; more than half Codex, a side-eye; two or more kinds, `the whole team's in`
+  joins the lines.
+- **First ship** of the session: the explosion at 1.5× with 24 bits of debris, `FIRST ONE!`.
+- **Where the numbers come from**: Herdr's agent list has no start times or errors. Every 10s the
+  panel runs `hc ls --all --json` (finished terminals carry `exit_code`) and `hc get <t> --json` for
+  each working or blocked one (`status_ms` is when it entered that status, so durations survive a
+  reload). Until hc has answered, it uses the time it saw the status change itself. Context use isn't
+  reported anywhere, so there's no "getting full" mood.
+
+### One-shot details
+
+- **An agent finishes** also gives a fist pump for 3 ticks: right fist up for two, the popcorn
+  bucket tipped right (the top half stepped a pixel over) with kernels flying further each tick,
+  `GET IN!`, and `LIVE` on the foam finger.
+- **An agent becomes blocked**: a 4-tick phone call. A grey 2×3 phone in his left hand, its screen
+  flashing white on the second tick, gone on the last. `they need me?!`, `noooo`, `on my way...`.
+  It plays once per newly blocked agent, then the plain blocked pose below takes over.
+- **Glazed**: he calms to the level 1 pose with every loop stopped, half-closed eyes, the body
+  sliding down over 3s (2px, 3px, 4px for the three depths). Lines change every 8s.
+- **Two or more agents were working and now none are** (collapse): 5 ticks. A 1px lift, the drop
+  back into the chair with the cushion giving, eyes shut for a tick, a half smile. `ahh`, `job done`.
+  Then the empty chair.
+- **Foam finger** words: `ooh` at level 1, `SHIP`/`LADS` at level 3, `LIVE` during a party or ship,
+  `THAT` and `hi` for their moods.
+  Level 2 has no finger (he's clapping).
 - **An agent is blocked**: the mood drops to at most level 1, a sad mouth, a tear, the popcorn
   spilled on the floor, `wah wah`, `they need me?!`, `noooo`.
 - **Clicking a desk** focuses that agent (`agent.focus`).
-- **Demo**: clicking the header, or `herdr-app do sitandwatch.demo`, cycles seven labelled states every
-  5s with fake desks: empty chair, level 1, level 2, level 3, finished, blocked, shipped. Again to stop.
+- **Demo**: clicking the header, or `herdr-app do sitandwatch.demo`, cycles 19 labelled states
+  every 5s with fake desks: empty chair, the three levels, finished, blocked, shipped, then one per
+  mood. `demo.gif` is a recording of one cycle. Again to stop.
 - Every motion is a native `loop` or `frames`; nothing animates when nothing is happening.
 - No keys and no hovers: it takes no keys, so there is no `keys.json` to merge.
 
 ## Built from
 
 - `mods/sitandwatch/mod.json`: `{ "place": "left", "size": 280, "title": "SitAndWatch" }`.
-- `mods/sitandwatch/panel.js`: the panel (`panel(list, party, opts)`), desks and `devLevel(list)`.
+- `mods/sitandwatch/panel.js`: the panel (`panel(list, party, opts)`), desks, `devLevel(list)` and
+  `resolveMood(m, level)`.
 - `mods/sitandwatch/art.js`: sprites as rows of palette letters (`sprite(rows, palette, s)` draws one
-  `div` per colour run), `bot()` from plain rectangles, `spectator(level, s, id, { panic, party })`.
+  `div` per colour run), `bot()` from plain rectangles, `spectator(level, s, id, { panic, party, ship, mood, fx, ... })`,
+  `explosion()`.
 - `mods/sitandwatch/main.js`: one view, its job picked by `props().role`: `panel` (the default), or
   `office`, `rail` and `pane` for a full-width office layout like the one it is based on (the
   office draws the same developer in the bottom-left corner).
 - The list is `agents()` plus background helpers (`hc run --bg`), which are not in `agents()`:
-  `hc(["ls", "--json"])` every 10s in a `cx.spawn`, live terminals with a status, merged by
-  address. A 1s timer advances the demo and ends the party.
-- Commands: `sitandwatch.demo` and `sitandwatch.ship` through `nextCommand()`. Calls `agents()`, `hc`, `run("agent.focus")`.
+  `hc(["ls", "--all", "--json"])` every 10s in a `cx.spawn`, live terminals with a status, merged by
+  address. The same poll finds crashes and asks `hc get` for status times. A 1s timer advances the
+  demo, ends the party and counts down the one-shots.
+- Commands: `sitandwatch.demo` and `sitandwatch.ship` through `nextCommand()`. Calls `agents()`,
+  `hc` (`ls`, `get`), `run("agent.focus")`.
   No network, no `exec`, no files outside its folder.
 - Based on [zuccs/herdr-office-layout](https://github.com/zuccs/herdr-office-layout) (MIT): its
   `art.js` helpers, palette, font and office view.
@@ -101,6 +155,12 @@ widening, eyes bulging with the head thrown back.
 - `loop` always swings there and back, so it can't play a one-time burst. The explosion renders
   squashed (stage 0), then 60ms later blown out (stage 1) with the same ids, and `transition()`
   animates the change once.
+- The one-shots count down in ticks of the 1s timer, which re-renders while one runs and every 15s
+  otherwise, so the minute-based moods catch up. Their edges (finish, newly blocked, busy to none,
+  new desk, focus change) are found in render against the previous statuses, like the party popper.
+- The demo toggles: `herdr-app do sitandwatch.demo` while it runs stops it, and a mod reload (any
+  file in the folder changing) stops it too. Look at the header (brown with `STOP` means on) before
+  recording it.
 - `loop` periods must be at least 100ms. Loops need a stable `.id()`; put the level in the id so
   they restart at the new speed when it changes.
 - `herdr-app check` renders the default role, the panel, with no agents: it can't show levels 1–3.
@@ -115,7 +175,7 @@ widening, eyes bulging with the head thrown back.
   get a standing ovation with confetti.
 - An agent asking for permission turns its screen red and makes him cry `wah wah` over spilled
   popcorn; an agent finishing sets off the party popper.
-- `herdr-app do sitandwatch.demo` cycles all seven states with labels, and `herdr-app status` reports no
+- `herdr-app do sitandwatch.demo` cycles all 19 states with labels, and `herdr-app status` reports no
   errors throughout.
 - Clicking a desk focuses that agent.
 - `herdr-app do sitandwatch.ship`, or a `git push` from Claude Code with the hook installed, sets off

@@ -7,7 +7,7 @@ desks. You are the developer in the red velvet armchair in the corner, watching 
 work. The more of them are working, the more excited you get. See
 [sitandwatch/RECIPE.md](sitandwatch/RECIPE.md) for how it is built.
 
-![SitAndWatch](sitandwatch/preview.png)
+<img src="sitandwatch/demo.gif" width="270" alt="SitAndWatch demo mode cycling through every state">
 
 ## What he does
 
@@ -17,10 +17,24 @@ work. The more of them are working, the more excited you get. See
 | One | Popcorn, a foam finger, eyebrows creeping up. "ooh" |
 | Two or three | Clapping, wide eyes, sweating. "go on son!" |
 | Four or more (or all of them) | Standing ovation, bulging eyes, confetti. "SHIP IT!" |
-| One just finished | Party popper. "GET IN!" |
-| One needs you | Spilled popcorn and a tear. "wah wah" |
+| One just finished | Party popper and a fist pump, popcorn flying. "GET IN!" |
+| One needs you | Spilled popcorn, a tear, a phone call. "they need me?!" ... "on my way..." |
+| Two or more need you | Both hands up, head whipping between desks. "which one?!" |
+| One has needed you for 2+ minutes | Half out of the chair, a red arrow on that desk. "THAT one" |
+| Three finished within a minute | Standing, both arms pumping, extra confetti. "they're flying!" |
+| One crashed (exited non-zero) | Hands on his head, popcorn on the floor. "oh no" |
+| A new agent appears | A nod, a green arrow on the new desk. "welcome" |
+| One has been going 10+ minutes | Glazed over and slumping, a pillow after 30, slumped after 60. "I have a life too" |
+| Two or more were busy and all stopped | Drops back into the chair. "ahh" ... "job done" |
+| Agents working and you haven't touched Herdr in 5 minutes | Stares at you, eats slowly. "you still watching?" |
+| After 10pm | A nightcap. "still at it?" |
+| 10+ agents seen this session | Eyes darting about. "how many are there?" |
+| Something shipped | Explosion, a bigger one the first time. "KABOOM!" (needs the Claude Code hook, see below) |
 
-Click the header, or run `herdr-app do sitandwatch.demo`, to cycle through every state with labels.
+Mostly Claude Code agents get a knowing nod, mostly Codex a side-eye, a mix "the whole team's in".
+
+Click the header, or run `herdr-app do sitandwatch.demo`, to cycle through all 19 states with labels
+(the animation above is one cycle).
 Click a desk to jump to that agent.
 
 ## Installation
@@ -34,8 +48,12 @@ Ask your agent to add this mod (it reads every file first), or by hand:
    { "id": "sitandwatch", "type": "block", "content": { "mod": "sitandwatch" }, "size": { "weight": 1.3 }, "min": 220 }
    ```
 
+For the explosion on `git push`, `gh pr merge` or a production `vercel` deploy, install the Claude
+Code hook in `sitandwatch/hooks/` (setup in [RECIPE.md](sitandwatch/RECIPE.md#ship-hook)).
+
 Delete the folder to remove it. It makes no network requests, runs no programs other than
-`hc ls` (to see background agents) and reads no files outside its folder. Nothing animates while
+`hc ls` and `hc get` (to see background agents, crashes and how long each agent has been busy) and
+reads no files outside its folder. Nothing animates while
 nothing is happening.
 
 ## Credits
