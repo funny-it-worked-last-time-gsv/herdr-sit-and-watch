@@ -188,7 +188,7 @@ export default class Office extends View {
         if (this.minCheck()) changed = true;
         if (this.knockTick(cx)) changed = true;
         const kept = pruneSubs(this.subs, Date.now());       // finished sub-agents leave, forgotten ones too
-        if (Object.keys(kept).length !== Object.keys(this.subs).length) { this.subs = kept; changed = true; }
+        if (Object.keys(kept).length !== Object.keys(this.subs).length) { this.subs = kept; this.saveSubs(); changed = true; }
         if (this.demoAt != null || partyOver || changed || ++ticks % 15 === 0) cx.notify();
       });
       // `herdr-app do sitandwatch.ship` (sent by the Claude Code hook after a push) sets off the explosion:
@@ -196,7 +196,8 @@ export default class Office extends View {
       this.ship = null;
       // developer mode: `herdr-app do sitandwatch.dev`, remembered across restarts
       // Claude Code sub-agents, from the hook: { [agent id]: { parent, at, doneAt } }
-      this.subs = {};
+      // kept across reloads (pruned on load), so a stop for one running before the reload still lands
+      this.subs = pruneSubs((() => { try { return JSON.parse(localStorage.getItem("subs") ?? "{}") ?? {}; } catch { return {}; } })(), Date.now());
       // minimised: { id, axis, saved (the size to restore), at, seen (what layout() said after) }, per copy
       const savedMin = (() => { try { return JSON.parse(localStorage.getItem("min") ?? "null"); } catch { return null; } })();
       this.min = keepMin(savedMin, (() => { try { return findBlock(layout()); } catch { return null; } })(), Date.now());
@@ -362,12 +363,17 @@ export default class Office extends View {
 
   // A sub-agent started or stopped. A stop for one never seen is ignored; a start for one already
   // running just keeps it.
+  // A stop for one never seen leaves a hidden tombstone for SUB_DONE_MS, so a start that arrives late
+  // (commands handed on between panel copies can swap order) doesn't make a ghost.
   subEvent({ verb, parent, id }, cx) {
     const now = Date.now();
     if (verb === "start") this.subs[id] ??= { parent, at: now };
-    else if (this.subs[id] && !this.subs[id].doneAt) this.subs[id].doneAt = now;
+    else if (!this.subs[id]) this.subs[id] = { parent, at: now, doneAt: now, tomb: true };
+    else if (!this.subs[id].doneAt) this.subs[id].doneAt = now;
+    this.saveSubs();
     cx.notify();
   }
+  saveSubs() { try { localStorage.setItem("subs", JSON.stringify(this.subs)); } catch {} }
 
   // A pet was clicked (or the dev petPoke fired): its bubble for two ticks, a line from its pool
   // ("asleep" while it's curled on the chair).
