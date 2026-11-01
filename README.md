@@ -34,6 +34,7 @@ work. The more of them are working, the more excited you get. See
 | After 10pm | A nightcap. "still at it?" |
 | Nothing for 10 minutes | Back in the chair, dozing. "z Z", and now and then "popcorn's getting cold" |
 | 10+ agents seen this session | Eyes darting about. "how many are there?" |
+| Agents busy (now and then) | One of the pets gets up and wanders off the edge, back 25-75s later: Buddy out the left, Snowy and Simba out the right. Never while nothing is running. |
 | Something shipped | Explosion with a PR MERGED, DEPLOYED or IT'S LIVE banner, bigger the first time. "KABOOM!" (needs the Claude Code hook, see below) |
 
 Mostly Claude Code agents get a knowing nod, mostly Codex a side-eye, a mix "the whole team's in".

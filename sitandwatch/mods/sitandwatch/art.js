@@ -271,12 +271,27 @@ export function pet(p, pose, s, left = false) {
 // Where each pet goes in the corner, in panel px from the chair's left edge (the corner is
 // DEV_W*3 wide, the chair drawn 16px down at scale 3, the rug from cornerH-16). poses comes from
 // petPoses() in rules.js: { buddy, snowy, simba }.
-export function pets(poses, cornerH, s, id) {
+// walk: { [name]: phase } for a pet wandering off and back (see wander() in main.js):
+// "out0" at its spot about to go, "out1" sliding off the edge, "away" gone, "in0" just past the edge,
+// "in1" sliding back. Only a pet sitting (or with its back turned) wanders; a reaction keeps it put.
+export const WALK_MS = 1800;
+const HOME = { Buddy: -44, Snowy: 100, Simba: 132 }, EXIT = { Buddy: -120, Snowy: 210, Simba: 210 };
+export function pets(poses, cornerH, s, id, walk = {}) {
   const [buddy, snowy, simba] = PETS;
   const floor = cornerH - 8;                               // their feet, on the rug
   const seat = 16 + 17 * 3, back = 16 + 3 * 3, arm = 16 + 9 * 3;   // chair seat, back and armrest tops
-  const at = (x, bottom, p, pose, left = false) =>
-    div().absolute().left(x).top(bottom - POSE[p.kind][pose].length * s).child(pet(p, pose, s, left)).id(`${id}-${p.name}-${pose}`);
+  const at = (x, bottom, p, pose, left = false) => {
+    const phase = (pose === "sit" || pose === "back") && walk[p.name];
+    if (!phase) return div().absolute().left(x).top(bottom - POSE[p.kind][pose].length * s).child(pet(p, pose, s, left)).id(`${id}-${p.name}-${pose}`);
+    if (phase === "away") return null;
+    // Walking: one id from start to end, so changing left slides it; a little bob for the steps.
+    const going = phase === "out0" || phase === "out1", gone = phase === "out1" || phase === "in0";
+    const offLeft = p.kind === "beagle";                   // Buddy goes out the left, the cats the right
+    const face = going ? offLeft : !offLeft;               // flip to face where it's walking
+    return div().absolute().left(gone ? EXIT[p.name] : HOME[p.name]).top(bottom - POSE[p.kind].sit.length * s).id(`${id}-${p.name}-walk`)
+      .transition("left", { duration: WALK_MS, easing: "linear" })
+      .child(div().relative().id(`${id}-${p.name}-step`).loop("top", { from: 0, to: -3, period: 220 }).child(pet(p, "sit", s, face)));
+  };
   const out = [];
   // Buddy: by the chair; at the popcorn when it's spilled (under the right of the chair)
   const b = poses.buddy;
@@ -298,7 +313,7 @@ export function pets(poses, cornerH, s, id) {
   // the can it pushed off, on the floor under the armrest
   if (poses.snowy === "knock" || poses.simba === "knock")
     out.push(r(66, floor - 9, 12, 9, "#c0c6cf").child(r(3, 0, 6, 9, "#c9302c")).id(`${id}-can-down`));
-  return out;
+  return out.filter(Boolean);
 }
 
 // ---- the room -------------------------------------------------------------

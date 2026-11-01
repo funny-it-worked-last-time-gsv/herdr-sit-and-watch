@@ -2,7 +2,7 @@ import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { agents, hc, nextCommand, spaces, panes, props, run, setAgentOrder, knownAgents } from "herdr";
 import { options, setOption, optionsDialog, openOptions } from "./options.js";
-import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H } from "./art.js";
+import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H, PETS, WALK_MS } from "./art.js";
 import { panel } from "./panel.js";
 import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel } from "./rules.js";
 import { pickLine } from "./lines.js";
@@ -164,6 +164,7 @@ export default class Office extends View {
         let changed = false;
         for (const k of ONE_SHOTS) if (this.m[k] > 0) { this.m[k]--; changed = true; }
         if (partyOver) startOneShot(this.m, "linger", 1);   // a second of confetti still drifting down
+        this.wanderTick(cx);
         if (this.demoAt != null || partyOver || changed || ++ticks % 15 === 0) cx.notify();
       });
       // `herdr-app do sitandwatch.ship` (sent by the Claude Code hook after a push) sets off the explosion:
@@ -189,6 +190,7 @@ export default class Office extends View {
           // `herdr-app do sitandwatch.chaos` turns chaos mode on for good (or off again)
           if (c === "chaos") { setOption({ chaos: !options().chaos }); cx.notify(); }
           if (c === "options") openOptions();
+          if (c === "wander") this.wanderTick(cx, true);
           // ship, ship-merged, ship-deployed: the hook says what shipped, for the banner
           if (c === "ship" || c.startsWith("ship-")) this.boom(c.slice(5), cx);
           // developer mode from the command line too: fire-<event>, mood-<name|auto>, level-<0..3|real>
@@ -203,6 +205,35 @@ export default class Office extends View {
     if (roleOf(props()) !== "office") return;
     this.roomView = cx.new(Room, this.roomProps());
     cx.timer.every(250, (cx) => { this.syncRoom(); if (this.tick()) cx.notify(); });
+  }
+
+  // Now and then a pet gets up, walks off the edge, and comes back a while later: each on its own
+  // clock, only while an agent is working or blocked (asleep on the chair otherwise, so nothing
+  // moves when nothing is happening). Two-stage like boom(): drawn at the start, then 60ms later
+  // at the end with transition("left") sliding it there. force: all of them, now (dev mode).
+  wanderTick(cx, force = false) {
+    const now = Date.now(), W = (this.walk ??= {});
+    const active = this.demoAt == null && this.list.some((a) => a.status === "working" || a.status === "blocked");
+    const later = (min, span) => now + min + Math.floor(Math.random() * span);
+    const step = (name, key, phase, ms, then) => cx.timer.after(ms, (cx) => {
+      if (W[name]?.key !== key) return;                   // a newer trip took over
+      W[name].phase = phase; then?.(W[name]); cx.notify();
+    });
+    for (const { name } of PETS) {
+      const w = (W[name] ??= { phase: "home", next: later(3 * MIN, 4 * MIN) });
+      if (!active) { if (w.phase !== "home") Object.assign(w, { phase: "home", key: null }); continue; }
+      if (w.phase === "home" && (force || now >= w.next)) {
+        const key = Object.assign(w, { phase: "out0", key: Math.random() }).key;
+        step(name, key, "out1", 60);
+        step(name, key, "away", WALK_MS + 100, (w) => { w.back = later(25 * 1000, 50 * 1000); });
+        cx.notify();
+      } else if (w.phase === "away" && now >= w.back) {
+        const key = Object.assign(w, { phase: "in0", key: Math.random() }).key;
+        step(name, key, "in1", 60);
+        step(name, key, "home", WALK_MS + 100, (w) => { w.next = later(3 * MIN, 4 * MIN); });
+        cx.notify();
+      }
+    }
   }
 
   // The ship explosion. kind: "merged", "deployed" or "pushed" (the default), for the banner.
@@ -570,8 +601,10 @@ export default class Office extends View {
         onLevel: (v, cx) => { d.level = v; cx.notify(); },
         onFire: (v, cx) => this.fire(v, cx),
         pets: d.pets, onPets: (v, cx) => { d.pets = v; cx.notify(); },
+        onWander: (cx) => this.wanderTick(cx, true),
       } : null;
-      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev }); }
+      const walk = Object.fromEntries(Object.entries(this.walk ?? {}).filter(([, w]) => w.phase !== "home").map(([k, w]) => [k, w.phase]));
+      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk }); }
       catch (e) { return div().p(8).bg("#fff").child(txt(`ERR ${e?.message ?? e}`, 12, "#a8322a")); }
     }
     if (role === "rail") {

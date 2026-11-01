@@ -262,6 +262,47 @@ const cdNow = snap.oneShots.countdown.filter((k) => !ALLOWED.newOneShots.include
 if (JSON.stringify(cdNow) !== JSON.stringify(g.oneShots.countdown)) fails.push(`countdown set: was ${g.oneShots.countdown}, now ${cdNow}`);
 diffMap("natural", snap.natural, g.natural);
 if (JSON.stringify(snap.error) !== JSON.stringify(g.error)) fails.push(`error wince: was ${JSON.stringify(g.error)}, now ${JSON.stringify(snap.error)}`);
+// ---- behaviour checks (new features, not in the golden) ---------------------------
+const petIds = (tree, name) => ids(tree).filter((x) => x.startsWith(`pet-${name}-`) && !x.endsWith("-step"));
+{ // wandering: a forced trip goes out, away and back; an idle panel never wanders
+  const { o, cx } = mount();
+  render(o, LISTS.w1);
+  o.wanderTick(cx, true);
+  const t0 = render(o, LISTS.w1);
+  S.advance(60);
+  const t1 = render(o, LISTS.w1);
+  S.advance(2000);
+  const t2 = render(o, LISTS.w1);
+  const x = (tree, name) => tree && (() => { let v = null; walk(tree, (e) => { if (e.idv === `pet-${name}-walk`) v = e.calls.find(([k]) => k === "left")?.[1][0]; }); return v; })();
+  if (x(t0, "Buddy") !== -44 || x(t1, "Buddy") !== -120) fails.push(`wander: Buddy should slide from -44 to -120, was ${x(t0, "Buddy")} -> ${x(t1, "Buddy")}`);
+  if (x(t1, "Simba") !== 210) fails.push(`wander: Simba should leave by the right (210), was ${x(t1, "Simba")}`);
+  if (petIds(t2, "Buddy").length) fails.push(`wander: Buddy should be away after the walk, saw ${petIds(t2, "Buddy")}`);
+  let t3 = null, t4 = null;                              // step until he's walking back, then home
+  for (let i = 0; i < 90 && !t4; i++) {
+    S.advance(1000);
+    const t = render(o, LISTS.w1), w = o.walk.Buddy.phase;
+    if (!t3 && (w === "in0" || w === "in1")) t3 = t;
+    if (t3 && w === "home") t4 = t;
+  }
+  if (!t3 || !petIds(t3, "Buddy").includes("pet-Buddy-walk")) fails.push(`wander: Buddy should be walking back, saw ${petIds(t3, "Buddy")}`);
+  if (!t4 || !petIds(t4, "Buddy").includes("pet-Buddy-sit")) fails.push(`wander: Buddy should be home, saw ${petIds(t4, "Buddy")}`);
+  for (const t of [t0, t1, t2, t3, t4].filter(Boolean)) noErr(t, "wander");
+}
+{ // nothing happening: nobody wanders, however long
+  const { o } = mount();
+  render(o, LISTS.idle3);
+  let moved = false;
+  for (let i = 0; i < 600; i++) { S.advance(1000); render(o, LISTS.idle3); if (Object.values(o.walk ?? {}).some((w) => w.phase !== "home")) moved = true; }
+  if (moved) fails.push("wander: a pet wandered with nothing happening");
+}
+{ // agents busy: each pet goes on its own within ten minutes and comes back
+  const { o } = mount();
+  render(o, LISTS.w2i1);
+  const went = new Set();
+  for (let i = 0; i < 600; i++) { S.advance(1000); for (const [k, w] of Object.entries(o.walk ?? {})) if (w.phase === "away") went.add(k); }
+  if (went.size !== 3) fails.push(`wander: in 10 busy minutes only ${[...went]} went off`);
+}
+
 const budget = g.budget.max + BUDGET_HEADROOM, over = snap.demo.counts.map((n, i) => [i + 1, n]).filter(([, n]) => n > budget);
 for (const [i, n] of over) fails.push(`demo state ${i}: ${n} elements, budget ${budget}`);
 
