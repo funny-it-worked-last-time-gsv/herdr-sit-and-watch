@@ -694,8 +694,13 @@ export function spectator(level, s, id, opts) {
     : L === 3 && chaos ? 500 : sad ? 1400 : party || ship || mode === "pump" || mode === "pushOff" || mode === "prOpened" ? 900 : mode === "burst" || mode === "error" || mode === "streak" || mode === "power" ? 700
     : [2400, 1600, 1400, 1000][L];
   const alarm = (sad && mode !== "pointAtBlocked") || mode === "error";
-  const say = div().absolute().left(16 * s).top((-9 - up) * s).px(4).py(2).bg("#ffffff").border(2).border_color(ink)
-    .child(txt(lines[0], 12, alarm ? "#a8322a" : ink).id(`${id}-say-${L}-${mode}-${party}-${ship}-${lines.join("|")}`).frames(lines, period));
+  // The bubble sits in a frame reaching toward the panel's edge (38 art px: 116px at the sidebar's
+  // scale, which fits the narrowest sidebar), so long lines wrap there rather than at the chair's
+  // edge; short ones still shrink to fit. A column with items_start: the bubble's width fits its
+  // text up to the frame's (a row would let it run on past the frame, unwrapped).
+  const say = div().absolute().left(16 * s).top((-9 - up) * s).w(38 * s + 2).flex().flex_col().items_start()
+    .child(div().px(4).py(2).bg("#ffffff").border(2).border_color(ink)
+      .child(txt(lines[0], 12, alarm ? "#a8322a" : ink).id(`${id}-say-${L}-${mode}-${party}-${ship}-${lines.join("|")}`).frames(lines, period)));
 
   const chair = () => div().relative().w(DEV_W * s).h(DEV_H * s)
     .child(R(2, 3, 22, 16, CHAIR.a).border(2).border_color(CHAIR.d))
