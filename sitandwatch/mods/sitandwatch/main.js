@@ -197,7 +197,9 @@ export default class Office extends View {
       // developer mode: `herdr-app do sitandwatch.dev`, remembered across restarts
       // Claude Code sub-agents, from the hook: { [agent id]: { parent, at, doneAt } }
       // kept across reloads (pruned on load), so a stop for one running before the reload still lands
-      this.subs = pruneSubs((() => { try { return JSON.parse(localStorage.getItem("subs") ?? "{}") ?? {}; } catch { return {}; } })(), Date.now());
+      // anything malformed is dropped, never thrown (init must reach the owner claim below)
+      this.subs = (() => { try { return pruneSubs(Object.fromEntries(Object.entries(JSON.parse(localStorage.getItem("subs") ?? "{}") ?? {})
+        .filter(([, s]) => s && typeof s === "object" && typeof s.parent === "string" && Number.isFinite(s.at))), Date.now()); } catch { return {}; } })();
       // minimised: { id, axis, saved (the size to restore), at, seen (what layout() said after) }, per copy
       const savedMin = (() => { try { return JSON.parse(localStorage.getItem("min") ?? "null"); } catch { return null; } })();
       this.min = keepMin(savedMin, (() => { try { return findBlock(layout()); } catch { return null; } })(), Date.now());
@@ -366,7 +368,7 @@ export default class Office extends View {
     } catch (e) { refused(e?.message ?? String(e)); }
   }
 
-  // A sub-agent started or stopped. A stop for one never seen is ignored; a start for one already
+  // A sub-agent started or stopped. A stop for one never seen leaves a tombstone (below); a start for one already
   // running just keeps it.
   // A stop for one never seen leaves a hidden tombstone for SUB_TOMB_MS, so a start that arrives late
   // (commands handed on between panel copies can swap order) doesn't make a ghost.
