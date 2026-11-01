@@ -2,7 +2,8 @@ import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { agents, hc, nextCommand, spaces, panes, props, run, setAgentOrder, knownAgents } from "herdr";
 import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H } from "./art.js";
-import { panel, devLevel } from "./panel.js";
+import { panel } from "./panel.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -53,8 +54,6 @@ const DEMO_STATES = [
 const OWNER = "commands-owner"; // localStorage key: which panel build takes commands
 const BANNERS = { merged: "PR MERGED", deployed: "DEPLOYED", pushed: "IT'S LIVE" };
 const POKES = 8;
-const ONE_SHOTS = ["finishPump", "blockedPhone", "collapse", "newAgentWelcome", "errorWince", "burstDance",
-  "streak", "areYouSure", "levelUp", "linger", "poke"];
 const SHIP_MS = 2600; // how long the explosion stays on screen
 const DEMO_MS = 5000;
 const THOUGHTS = ["?", "!", "♪", "♥", "...", "☼", "$", "#"];
@@ -124,7 +123,7 @@ export default class Office extends View {
           // An agent we were showing that has since exited with a non-zero code: wince.
           const fin = all.filter((t) => t.state === "finished");
           if (m.finishedSeen && fin.some((t) => !m.finishedSeen.has(t.address) && m.seen.has(t.address) && (t.exit_code ?? 0) > 0)) {
-            m.errorWince = 4;
+            startOneShot(m, "errorWince");
             cx.notify();
           }
           m.finishedSeen = new Set(fin.map((t) => t.address));
@@ -161,7 +160,7 @@ export default class Office extends View {
         if (partyOver) this.partyUntil = 0;
         let changed = false;
         for (const k of ONE_SHOTS) if (this.m[k] > 0) { this.m[k]--; changed = true; }
-        if (partyOver) this.m.linger = 1;   // a second of confetti still drifting down
+        if (partyOver) startOneShot(this.m, "linger", 1);   // a second of confetti still drifting down
         if (this.demoAt != null || partyOver || changed || ++ticks % 15 === 0) cx.notify();
       });
       // `herdr-app do sitandwatch.ship` (sent by the Claude Code hook after a push) sets off the explosion:
@@ -220,10 +219,7 @@ export default class Office extends View {
   // Developer mode's "fire" buttons: start a one-shot exactly as the real event would.
   fire(ev, cx) {
     const m = this.m, first = this.list[0]?.address ?? null;
-    const set = { finish: ["finishPump", 3], phone: ["blockedPhone", 4], "yes?": ["areYouSure", 4], collapse: ["collapse", 5],
-      burst: ["burstDance", 6], streak: ["streak", 4], error: ["errorWince", 4], welcome: ["newAgentWelcome", 3],
-      levelUp: ["levelUp", 2], linger: ["linger", 2], poke: ["poke", 2] }[ev];
-    if (set) m[set[0]] = set[1];
+    if (CHIP_KEY[ev]) startOneShot(m, CHIP_KEY[ev]);
     if (ev === "finish") this.partyUntil = Date.now() + 3000;
     if (ev === "streak") m.streakAddr = first;
     if (ev === "welcome") m.welcomeAddr = first;
@@ -235,7 +231,7 @@ export default class Office extends View {
   }
 
   // Run on every panel render: durations, edges against the previous statuses, the one-shots they
-  // start. Returns what resolveMood() in panel.js reads.
+  // start. Returns what resolveMood() in rules.js reads.
   trackMetrics(list, prev, first) {
     const m = this.m, now = Date.now();
     // When each agent entered its status: hc's status_ms when it agrees, else when we saw it change.
@@ -250,31 +246,31 @@ export default class Office extends View {
 
     const done = list.filter((a) => prev[a.address] === "working" && a.status === "done");
     const finished = done.length > 0;
-    if (finished) { m.finishPump = 3; m.finishes.push(now); }
+    if (finished) { startOneShot(m, "finishPump"); m.finishes.push(now); }
     // the same agent finishing three times in ten minutes is a streak
     for (const a of done) {
       const ts = (m.byAddr[a.address] ?? []).filter((t) => now - t < 10 * MIN).concat(now);
       m.byAddr[a.address] = ts;
-      if (ts.length >= 3) { m.streak = 4; m.streakAddr = a.address; }
+      if (ts.length >= 3) { startOneShot(m, "streak"); m.streakAddr = a.address; }
     }
     if (working.length || finished) m.lastBusy = now;
     const level = devLevel(list);
-    if (level === 3 && m.prevLevel < 3) m.levelUp = 2;
+    if (level === 3 && m.prevLevel < 3) startOneShot(m, "levelUp");
     m.prevLevel = level;
     m.finishes = m.finishes.filter((t) => now - t < MIN);
-    if (finished && m.finishes.length >= 3 && !m.burstDance) m.burstDance = 6;
+    if (finished && m.finishes.length >= 3 && !m.burstDance) startOneShot(m, "burstDance");
     const newBlock = first ? null : list.find((a) => a.status === "blocked" && prev[a.address] !== "blocked");
     if (newBlock) {
       // every third new block, the meme instead of the phone: "Are you sure?" "Yes"
-      if (++m.blocks % 3 === 0) { m.areYouSure = 4; m.aysAddr = newBlock.address; }
-      else m.blockedPhone = 4;
+      if (++m.blocks % 3 === 0) { startOneShot(m, "areYouSure"); m.aysAddr = newBlock.address; }
+      else startOneShot(m, "blockedPhone");
     }
-    if (m.prevWorking >= 2 && working.length === 0) m.collapse = 5;
+    if (m.prevWorking >= 2 && working.length === 0) startOneShot(m, "collapse");
     m.prevWorking = working.length;
     // A desk that wasn't there before. Skip the first 15s: background helpers arrive with the first poll.
     if (m.prevAddrs && now - m.bornAt > 15000) {
       const fresh = list.find((a) => !m.prevAddrs.has(a.address));
-      if (fresh) { m.newAgentWelcome = 3; m.welcomeAddr = fresh.address; }
+      if (fresh) { startOneShot(m, "newAgentWelcome"); m.welcomeAddr = fresh.address; }
     }
     m.prevAddrs = new Set(list.map((a) => a.address));
     for (const a of list) m.seen.add(a.address);
@@ -543,7 +539,7 @@ export default class Office extends View {
       // clicking him: he turns and says something for two ticks
       const poke = (cx) => {
         this.m.lastUser = Date.now();
-        this.m.poke = 2;
+        startOneShot(this.m, "poke");
         this.m.pokeLine = pickLine("poke", Math.floor(Math.random() * POKES));
         cx.notify();
       };

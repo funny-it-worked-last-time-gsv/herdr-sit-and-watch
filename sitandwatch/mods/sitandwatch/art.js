@@ -222,8 +222,8 @@ const DEV = { hair: "#3a2618", skin: "#f1c9a5", shirt: "#6a6f7a", pants: "#2f3a5
 const CHAIR = { a: "#8a1f2e", d: "#5e1420", l: "#a8323f", b: "#d9b25a", wood: "#4a2a14" };
 
 // opts: { panic: an agent is blocked, party: an agent just finished, ship: something was pushed,
-//   firstShip: it's the first push this session, mood: "normal" or one picked by resolveMood() in
-//   panel.js, fx: ticks left of each one-shot { finishPump, blockedPhone, collapse, newAgentWelcome,
+//   firstShip: it's the first push this session, mood: "normal" or one picked by effectiveMood() in rules.js,
+//   fx: ticks left of each one-shot { finishPump, blockedPhone, collapse, newAgentWelcome,
 //   errorWince, burstDance }, provider: "claude" | "codex" | "mixed" | null, night: wear the
 //   nightcap, name: the tab the mood is about (the long-blocked or the new desk) }.
 // A bare boolean means panic.
