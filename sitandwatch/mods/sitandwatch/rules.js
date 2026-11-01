@@ -218,6 +218,8 @@ export function planHeight({ height, saved, b, minimised, first }) {
   const keep = { resize: null, saved: saved ?? null, warn: null };
   if (minimised) return keep;
   const found = !!b && (b.ok || b.reason === "min");
+  // just restored from a strip, and the layout still reads it small: wait (never take a strip as "the size before")
+  if (found && Number.isFinite(b.size?.px) && b.size.px < MIN_OPEN) return keep;
   if (!height) {
     if (saved && found && b.id === saved.id && !sameSize(b.size, saved.from)) return { resize: saved.from ?? { weight: 1 }, saved: null, warn: null };
     return { resize: null, saved: null, warn: null };
@@ -240,6 +242,7 @@ export function planHeight({ height, saved, b, minimised, first }) {
 export function keepMin(min, b, now = Infinity) {
   if (!min || !b?.ok || now - (min.at ?? 0) <= MIN_GUARD_MS) return min ?? null;
   if (b.id !== min.id || b.axis !== min.axis) return null;
+  if (Number.isFinite(min.seen) && b.size?.px === min.seen) return min;   // what the layout read just after the shrink
   return Number.isFinite(b.size?.px) && b.size.px >= MIN_OPEN ? null : min;
 }
 // The toasts for each reason minimising can't happen.
