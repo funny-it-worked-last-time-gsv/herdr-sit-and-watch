@@ -132,9 +132,11 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - **An agent is blocked**: the mood drops to at most level 1, a sad mouth, a tear, the popcorn
   spilled on the floor, `wah wah`, `they need me?!`, `noooo`.
 - **Clicking a desk** focuses that agent (`agent.focus`).
-- **Demo**: clicking the header, or `herdr-app do sitandwatch.demo`, cycles 24 labelled states
-  every 5s with fake desks: the three levels, finished, blocked, shipped, one per mood, and the empty
-  chair last. `demo.gif` is a recording of one cycle. Again to stop.
+- **Demo**: clicking the header, or `herdr-app do sitandwatch.demo`, cycles 27 labelled states
+  every 5s with fake desks: the three levels, finished, blocked, shipped, one per mood, the empty
+  chair, then power, cobwebs and sub-agents. `demo-<n>` opens it at state n (1-based; out of range is
+  ignored), which is how the GIFs in `media/` were recorded: `demo-<n>`, then `herdr-app shot` about
+  ten times a second for 4.5s, each frame cropped to the panel. Again (`demo`) to stop.
 - **Developer mode**: `herdr-app do sitandwatch.dev` (remembered) shows a strip under the header with
   the mood, level, counts and durations it's picked from, and the live one-shots. Its `buttons` chip
   opens rows to force a level, pin a mood (one-shots still take over while they run) or fire any
@@ -243,11 +245,45 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - `cobwebLevel(idleMs)`: 1 after an hour (a web in the monitor's top-left corner), 2 after 8 hours (webs on
   both monitor corners and under the desk, and a dusty `#c8ccd477` screen). Each web is one tinted
   `svg("mods/sitandwatch/cobweb.svg")` (`cobweb-r.svg` mirrored), `#e6e9ef`, so they cost one div each.
-- A `done` desk (finished, not looked at yet: looking turns it idle) shows `sinceLabel(idleMs)` on its
-  screen, 10px `#cfe0ff`: `<1m`, `12m`, `3h`, `2d`, from the same last-active time. One element; the 15s
-  re-render keeps it current.
+- A finished agent you haven't answered shows `sinceLabel(idleMs)` on its screen, 10px `#cfe0ff`:
+  `<1m`, `12m`, `3h`, `2d`. Herdr turns `done` into `idle` as soon as you look, so `trackWaiting()` in
+  `rules.js` keeps `{ address: when it finished }`: set on `done` (from `status_ms`), kept through `idle`,
+  cleared once it's working or blocked again (you answered) or gone. Saved in localStorage (`waiting`), so
+  a restart keeps it. A waiting desk's last-active time is when it finished, so its order and cobwebs
+  count from then too. One element; the 15s re-render keeps it current.
+- Each desk is labelled under its chair (`pn-<address>`, 10px, ink, light when focused; rows are 68px
+  to fit it): `deskName()` in `names.js`, the tab's name unless it's only Herdr's number, else the
+  space's name (the project), else the program's, else the terminal; 15 characters. The desk's top and
+  front are one element (`border_b`), which pays for the label in the element budget.
 - Dev: the `desks` row (`real`, `1h`, `8h`), or `herdr-app do sitandwatch.desks-<1h|8h|real>`, pretends every
-  desk not busy is that old; only while developer mode is on. Demo state 25 "Old agents: cobwebs".
+  desk not busy is that old; only while developer mode is on. Demo state 26 "Old agents: cobwebs".
+
+## Claude Code sub-agents
+
+- `hooks/sitandwatch-subagents.py`, on Claude Code's `SubagentStart` and `SubagentStop`, runs
+  `herdr-app do sitandwatch.sub-start-<terminal>-<agent id>` (or `sub-stop-`): the terminal from
+  `HC_TERMINAL_ID`, ids cut to letters and digits. Anything missing, it sends nothing; every error is
+  swallowed. Herdr's `herdr-app ls` lists `sub_agents` per terminal, but mods can't read it.
+- `parseSubCommand()` reads them; `this.subs = { id: { parent, at, doneAt } }` (a stop for an unknown
+  id is ignored). `pruneSubs()` treats a parent's sub-agents as one batch: kept while any runs, all
+  dropped 8s (`SUB_DONE_MS`) after the last stops; one never stopped goes after an hour (`SUB_TTL_MS`).
+- `subDesks()` turns them into agents (`<parent>~<id>`, working or done) for everything that reads
+  agents: the metrics (welcome, finish, level), the power bar. Then `foldSubs()` takes them off the
+  desks and gives the parent's desk `subs: { done, total, running }`, drawn as `psub-<address>`: a
+  `#2b2f3a` tag by the monitor reading `2/5`, `#ffd86a` while any run, `#9fe0a0` when all are done.
+  `headcount()` counts running ones in the header and his level; a mark on a sub-agent (`deskOf()`)
+  points at its parent's desk; a desk with any running counts as active.
+- Dev: the `subagent` fire button starts a pretend one on the first desk for 15s. Demo state 27.
+
+## Screenshot mode
+
+- `privacy.js` is the screenshot mode mods' own file, copied in unchanged (each of its mods carries the
+  same copy): it reads Herdr's shared `privacy` state, `{ on, hidden, phrases: [{ text, alias }] }`.
+- `names.js` puts every drawn name through it: `spaceLabel()`, `tabName()`, `tabLabel()` and
+  `deskName()`. Hidden and on: an aliased phrase is swapped in, else the stand-in (`Space N`, the
+  program's name for a tab); a space hidden by hand hides its tabs' names too; a terminal with no tab
+  or space still gets aliases. Off or not installed: names as they are. Used by the desk labels, the
+  name he calls out, and in the office view the space signs, desk names, the hover card and the rail.
 
 ## Options
 
@@ -304,9 +340,13 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   get a standing ovation with confetti.
 - An agent asking for permission turns its screen red and makes him cry `wah wah` over spilled
   popcorn; an agent finishing sets off the party popper.
-- `herdr-app do sitandwatch.demo` cycles all 24 states with labels, and `herdr-app status` reports no
+- `herdr-app do sitandwatch.demo` cycles all 27 states with labels, and `herdr-app status` reports no
   errors throughout.
 - Clicking a desk focuses that agent.
+- Every desk shows its name; with screenshot mode on, the renamed and hidden ones show its aliases and stand-ins.
+- A finished agent keeps its waiting time on screen after you look at it, until it works again.
+- With the sub-agent hook, a Claude Code session running five sub-agents, two finished, reads `2/5` on its
+  desk and the header counts the three still running.
 - `herdr-app do sitandwatch.ship`, or a `git push` from Claude Code with the hook installed, sets off
   the explosion, which clears by itself.
 
@@ -322,3 +362,13 @@ add to `~/.claude/settings.json`:
 ```
 
 `is_ship()` in the script decides what counts as shipping.
+
+## Sub-agent hook
+
+`hooks/sitandwatch-subagents.py` is a Claude Code `SubagentStart`/`SubagentStop` hook. Copy it to
+`~/.claude/hooks/` and add to `~/.claude/settings.json`:
+
+```json
+"SubagentStart": [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/sitandwatch-subagents.py", "async": true, "timeout": 10 }] }],
+"SubagentStop": [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/sitandwatch-subagents.py", "async": true, "timeout": 10 }] }]
+```
