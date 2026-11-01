@@ -1,10 +1,10 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { agents, hc, nextCommand, spaces, panes, props, run, setAgentOrder, knownAgents } from "herdr";
+import { agents, hc, nextCommand, spaces, panes, props, run, setAgentOrder, knownAgents, layout, notify } from "herdr";
 import { options, setOption, optionsDialog, openOptions } from "./options.js";
 import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H, PETS, WALK_MS } from "./art.js";
 import { panel } from "./panel.js";
-import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL } from "./rules.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, shouldClearMin, MIN_GUARD_MS, MIN_TROUBLE } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -173,12 +173,16 @@ export default class Office extends View {
         if (partyOver) startOneShot(this.m, "linger", 1);   // a second of confetti still drifting down
         this.wanderTick(cx);
         if (this.powerTick(token)) changed = true;
+        this.minBusy = false;
+        if (this.minCheck()) changed = true;
         if (this.demoAt != null || partyOver || changed || ++ticks % 15 === 0) cx.notify();
       });
       // `herdr-app do sitandwatch.ship` (sent by the Claude Code hook after a push) sets off the explosion:
       // stage 0 draws it squashed, stage 1 a moment later lets transition() blow it out, then it clears.
       this.ship = null;
       // developer mode: `herdr-app do sitandwatch.dev`, remembered across restarts
+      // minimised: { id, axis, saved (the size to restore), at, seen (what layout() said after) }, per copy
+      this.min = (() => { try { return JSON.parse(localStorage.getItem("min") ?? "null"); } catch { return null; } })();
       // developer mode's pins; whether it's on is an option (shared, so the Options dialog sees it)
       this.dev = { mood: null, level: null };
       // A reload or a rebuilt view leaves the old loop below waiting too, and its cx keeps working,
@@ -199,6 +203,7 @@ export default class Office extends View {
           if (c === "chaos") { setOption({ chaos: !options().chaos }); cx.notify(); }
           if (c === "options") openOptions();
           if (c === "wander") this.wanderTick(cx, true);
+          if (c === "min") this.minimise(cx);
           // desks-<1h|8h|real>: pretend every desk not busy has been idle that long (cobwebs)
           if (c.startsWith("desks-")) { const v = c.slice(6); this.dev.desks = DESK_AGES[v] ? v : null; cx.notify(); }
           // ship, ship-merged, ship-deployed: the hook says what shipped, for the banner
@@ -215,6 +220,54 @@ export default class Office extends View {
     if (roleOf(props()) !== "office") return;
     this.roomView = cx.new(Room, this.roomProps());
     cx.timer.every(250, (cx) => { this.syncRoom(); if (this.tick()) cx.notify(); });
+  }
+
+  // Minimise: shrink this panel's own block to a strip (in a column) or a rail (in a row), and back to
+  // the size it had. Handled by the copy that was clicked; one click per tick (a double click is one).
+  // Anything that stops it shows a toast; nothing fails silently.
+  minimise(cx) {
+    if (this.minBusy) return;
+    this.minBusy = true;
+    const trouble = (why, detail) => {
+      try { notify({ title: "Sit & Watch", body: MIN_TROUBLE[why] + (detail ? `: ${detail}` : ""), level: "warning" }); } catch {}
+      console.log("sitandwatch minimise:", why, detail ?? "");
+    };
+    const resize = (args, onFail) => {
+      try {
+        const res = run("layout.resize", args);
+        const bad = (r) => { if (r && typeof r === "object" && r.error) { onFail(); trouble("failed", r.error); cx.notify(); } };
+        if (res && typeof res.then === "function") res.then(bad, (e) => { onFail(); trouble("failed", e?.message ?? String(e)); cx.notify(); });
+        else bad(res);
+      } catch (e) { onFail(); trouble("failed", e?.message ?? String(e)); }
+    };
+    if (this.min) {                                          // back to the size it had
+      const was = this.min;
+      this.setMin(null);
+      resize({ id: was.id, ...(was.saved ?? { weight: 1 }) }, () => this.setMin(was));
+    } else {
+      let b;
+      try { b = findBlock(layout()); } catch (e) { return trouble("none", e?.message); }
+      if (!b.ok) return trouble(b.reason, b.min ? `min ${b.min}` : "");
+      const min = { id: b.id, axis: b.axis, saved: b.size, at: Date.now(), seen: null };
+      this.setMin(min);
+      resize({ id: b.id, px: b.target }, () => this.setMin(null));
+    }
+    cx.notify();
+  }
+  setMin(v) { this.min = v; try { localStorage.setItem("min", JSON.stringify(v)); } catch {} }
+
+  // Once a second while minimised: if the block reads big again (dragged open, another layout), draw the
+  // full panel. Compared with what layout() said just after shrinking, so a layout() that keeps reporting
+  // the configured size never clears it. Returns whether that changed anything.
+  minCheck() {
+    if (!this.min) return false;
+    const now = Date.now();
+    if (now - this.min.at <= MIN_GUARD_MS) return false;
+    let px;
+    try { px = findBlock(layout()).size?.px; } catch { return false; }
+    if (this.min.seen == null) { this.setMin({ ...this.min, seen: px ?? null }); return false; }
+    if (px !== this.min.seen && shouldClearMin(px, this.min.at, now)) { this.setMin(null); return true; }
+    return false;
   }
 
   // The power bar, once a second. Only the copy that owns the commands counts (a stale copy left by a
@@ -641,9 +694,12 @@ export default class Office extends View {
         pets: d.pets, onPets: (v, cx) => { d.pets = v; cx.notify(); },
         onWander: (cx) => this.wanderTick(cx, true),
         desks: d.desks, onDesks: (v, cx) => { d.desks = v; cx.notify(); },
+        block: (() => { try { const b = findBlock(layout()); return b.ok ? `${b.id} ${b.axis} ${JSON.stringify(b.size)}` : `no block (${b.reason})`; } catch { return "no layout()"; } })(),
+        min: this.min ? `${this.min.axis} seen ${this.min.seen ?? "-"}` : "off",
       } : null;
       const walk = Object.fromEntries(Object.entries(this.walk ?? {}).filter(([, w]) => w.phase !== "home").map(([k, w]) => [k, w.phase]));
-      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk, idle, power: this.m.power }); }
+      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk, idle, power: this.m.power,
+        min: this.min?.axis ?? null, onMin: (cx) => this.minimise(cx) }); }
       catch (e) { return div().p(8).bg("#fff").child(txt(`ERR ${e?.message ?? e}`, 12, "#a8322a")); }
     }
     if (role === "rail") {

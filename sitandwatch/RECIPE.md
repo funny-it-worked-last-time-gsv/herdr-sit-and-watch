@@ -197,6 +197,25 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - Dev: `power N/1200` in the strip; the `power` fire chip (or `herdr-app do sitandwatch.fire-power`).
   Demo: the bar follows each state's level; state 25 "Power full: POWER!".
 
+## Minimise
+
+- `_` at the right of the header (own `on_mouse_down` and `on_click`, both `stop_propagation`, so the
+  header's demo toggle never fires), or `herdr-app do sitandwatch.min`. Handled by the copy clicked; one
+  action per 1s tick (`minBusy`), so a double click is one.
+- `findBlock(layout())` in `rules.js`: the blocks whose content is this mod as the panel (`props.role`
+  absent or `"panel"`, not office/rail/pane). None, two ("which one?"), no `id`, or a `min` over the target:
+  a `notify()` toast each (`MIN_TROUBLE`), no resize. The parent's type picks the axis: a column gives a
+  30px strip, a row a 40px rail. `run("layout.resize", { id, px })`; the old `size` (`{px}` or `{weight}`)
+  is kept in localStorage `min` and restored on `+`. A resize that comes back `{ error }` toasts and undoes
+  the flag.
+- Checked in Herdr 0.1.11: `layout.resize` shrinks the block; the layout file keeps its configured size,
+  but `layout()` at run time reports the new one. So once a second while minimised, `minCheck()` notes what
+  `layout()` says after a 3s guard, and if it later reads >= 139px (dragged open, another layout) the full
+  panel comes back. A `layout()` that keeps reporting the configured size never clears it.
+- Strip: count, power bar, `miniFace()` (his 12x7 face at scale 2, brows and mouth by level, sad when
+  someone needs you), `+`. Rail: face, count, vertical power bar, `+`. Dev: `min <axis> seen <px>` and
+  `block <id> <axis> <size>` in the strip.
+
 ## Desks: last-active order and cobwebs
 
 - Every poll asks `hc get` for each live agent's `status_ms`: busy ones every time, the rest once

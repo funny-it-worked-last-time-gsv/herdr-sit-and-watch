@@ -167,3 +167,38 @@ export function loadPower(saved, savedAt, now) {
   const p = Number(saved), at = Number(savedAt);
   return Number.isFinite(p) && Number.isFinite(at) && now - at <= POWER_KEEP_MS ? Math.min(Math.max(p, 0), POWER_FULL) : 0;
 }
+
+// ---- minimise: shrink this panel's own layout block to a strip (in a column) or a rail (in a row) ----
+export const MIN_STRIP = 30, MIN_RAIL = 40, MIN_OPEN = 139, MIN_GUARD_MS = 3000;
+// This panel's block in a layout tree: blocks showing this mod as the panel (not its office, rail or
+// pane views). ok, or why not: "none", "ambiguous" (two panels: which one is this?), "noid", or "min"
+// (the block's own min is bigger than the strip). axis: the parent's direction, which resize follows.
+export function findBlock(tree) {
+  const found = [];
+  const walk = (n, parent) => {
+    if (!n || typeof n !== "object") return;
+    const c = n.content;
+    if (c?.mod === "sitandwatch" && (c.props?.role ?? "panel") === "panel") found.push({ n, parent });
+    for (const k of n.children ?? []) walk(k, n);
+  };
+  walk(tree, null);
+  if (!found.length) return { ok: false, reason: "none" };
+  if (found.length > 1) return { ok: false, reason: "ambiguous" };
+  const { n, parent } = found[0];
+  if (!n.id) return { ok: false, reason: "noid" };
+  const axis = parent?.type === "row" ? "row" : "column";
+  const target = axis === "row" ? MIN_RAIL : MIN_STRIP;
+  if ((n.min ?? 0) > target) return { ok: false, reason: "min", id: n.id, min: n.min };
+  return { ok: true, id: n.id, axis, target, size: n.size ?? null };
+}
+// Minimised, and the block now reads big again (dragged open, another layout): show the full panel.
+// Not in the first moments after shrinking, while Herdr catches up.
+export const shouldClearMin = (sizePx, minAt, now) => now - minAt > MIN_GUARD_MS && Number.isFinite(sizePx) && sizePx >= MIN_OPEN;
+// The toasts for each reason minimising can't happen.
+export const MIN_TROUBLE = {
+  none: "Can't find my block in this layout",
+  ambiguous: "Two Sit & Watch panels: give each block an id",
+  noid: "Give my block an id in your layout",
+  min: "Herdr won't shrink me: lower my block's min to 30",
+  failed: "Herdr refused to resize me",
+};
