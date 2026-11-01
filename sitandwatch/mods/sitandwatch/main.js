@@ -7,7 +7,7 @@ import { LINES } from "./lines.js";
 import { panel } from "./panel.js";
 import { spaceLabel, tabLabel, tabName } from "./names.js";
 import { spaceName, tabText } from "./privacy.js";
-import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, planHeight, HEIGHT_TROUBLE, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting } from "./rules.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, planHeight, HEIGHT_TROUBLE, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_OPEN, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -335,8 +335,10 @@ export default class Office extends View {
     let saved = null; try { saved = JSON.parse(localStorage.getItem("height") ?? "null"); } catch {}
     const minimised = !!this.min;
     const plan = planHeight({ height: h, saved, b, minimised, first, restoredFrom: this.restoredFrom });
-    // the first look counts once there's an unminimised block to look at (a restart's re-apply waits for that)
-    if (b && (b.ok || b.reason === "min") && !minimised) this.heightTicked = true;
+    // the first look counts once there's an unminimised block that reads open (a restart's re-apply waits for
+    // that); a block reading open also ends what a restore left to remember
+    const open = b && (b.ok || b.reason === "min") && !minimised && !(b.size?.px < MIN_OPEN);
+    if (open) { this.heightTicked = true; this.restoredFrom = null; }
     const store = (v) => { try { v ? localStorage.setItem("height", JSON.stringify(v)) : localStorage.removeItem("height"); } catch {} };
     // any change to what's set (a resize or not) makes an older refusal old news
     if (JSON.stringify(plan.saved) !== JSON.stringify(saved)) { store(plan.saved); this.heightSeq = (this.heightSeq ?? 0) + 1; }

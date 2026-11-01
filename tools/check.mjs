@@ -1324,9 +1324,9 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
 
 // ---- ship run 2 review fixes ----------------------------------------------------------------
 {
-  // Value: protects=a fresh finish time after done→working→done between polls; just after a restore the restore size (not the strip) as "the size before"; a restart's height re-apply retried after a
+  // Value: protects=a fresh finish time after done→working→done between polls; just after a restore the restore size (not the strip) as "the size before", forgotten once it reads open; a restart's re-apply not spent on a strip reading; a restart's height re-apply retried after a
   //   refusal; a refused "layout" restore rolled back and retried; a new choice not held up by an old refusal's wait; a late
-  //   refusal not undoing a newer choice; no planning while the block still reads strip-sized; keepMin trusting the size seen
+  //   refusal not undoing a newer choice;  keepMin trusting the size seen
   //   after the shrink (reverted: only an open block drops it); only the owning copy saving sub-agents; fails_when=any of those rules is reverted;
   //   why_new=found by the ship's batched specialist and red team (run 2); seam=none; no_claim=Herdr's real resize timing
   const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
@@ -1414,7 +1414,7 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   rejectA?.(new Error("late")); await S.settle(); await S.settle();
   let ha = null; try { ha = JSON.parse(localStorage.getItem("height")); } catch {}
   if (ha?.h !== 400 || ha?.from?.px !== 250) fails.push(`fixes2: an old refusal shouldn't roll back a newer identical choice, height=${JSON.stringify(ha)}`);
-  // A restart's re-apply isn't used up while the block is settling after a restore.
+  // Just after a restore ("+"), a strip-sized reading: a new choice keeps the restore's size as "the size before".
   localStorage.setItem("height", JSON.stringify({ id: "sitandwatch", h: 400, from: { px: 300 } }));
   world.layout = lay(300); world.shared[OPTKEY] = { height: 400 };
   const h4 = new Office(); h4.init(world.props, makeCx());
@@ -1425,6 +1425,14 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (!sized().includes('{"id":"sitandwatch","px":400}')) fails.push(`fixes2: after a restore the chosen height should apply, got ${sized()}`);
   let hr = null; try { hr = JSON.parse(localStorage.getItem("height")); } catch {}
   if (hr?.from?.px !== 300) fails.push(`fixes2: a restore read as a strip should keep the restore's size as the size before, got ${JSON.stringify(hr)}`);
+  // A restart that starts minimised: the re-apply isn't spent on the strip reading after "+", only once it reads open.
+  localStorage.setItem("height", JSON.stringify({ id: "sitandwatch", h: 400, from: { px: 300 } }));
+  localStorage.setItem("min", JSON.stringify({ id: "sitandwatch", axis: "column", saved: { px: 300 }, at: clock.now - 10000, seen: 30 }));
+  world.layout = lay(30); world.shared[OPTKEY] = { height: 400 };
+  const h5 = new Office(); h5.init(world.props, makeCx()); h5.minBusy = false; h5.minimise(makeCx()); world.runs = []; S.advance(1000);
+  world.layout = lay(300); S.advance(1000);
+  if (!sized().includes('{"id":"sitandwatch","px":400}')) fails.push(`fixes2: a restart's re-apply should wait out the strip reading after "+", got ${sized()}`);
+  if (h5.restoredFrom != null) fails.push("fixes2: once the block reads open, the restore size should be forgotten");
   world.layout = null; world.runs = []; world.shared[OPTKEY] = {};
 }
 
