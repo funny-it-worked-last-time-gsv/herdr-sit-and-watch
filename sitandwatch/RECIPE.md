@@ -169,6 +169,19 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - Based on [zuccs/herdr-office-layout](https://github.com/zuccs/herdr-office-layout) (MIT): its
   `art.js` helpers, palette, font and office view.
 
+## Pets wandering
+
+- `wanderTick(cx, force)` in `main.js`, on the 1s timer: each pet has its own clock (next trip in
+  3-7 min, away 25-75s), and only while an agent is working or blocked; otherwise they're home
+  (asleep on the chair), so nothing moves when nothing is happening.
+- Two-stage, like `boom()`: phase `out0` draws the pet at its spot with id `pet-<name>-walk`, 60ms
+  later `out1` at the edge (Buddy -120, cats 210) and `transition("left", 1800ms)` slides it; `away`
+  draws nothing; `in0`/`in1` slide it back; `home` hands back to the normal `pet-<name>-sit`. A
+  `loop("top")` bob on an inner div makes the steps. Each trip has a key so a stale timer can't
+  move a pet that's already on its next trip.
+- Only a pet sitting or with its back turned wanders; a reaction (howl, paw, eat, knock) keeps it put.
+- Dev: `wander` in the pets row, or `herdr-app do sitandwatch.wander`, sends them all off now.
+
 ## Options
 
 - `options.js`: the Options dialog, opened from OPTS in the header (its own `on_mouse_down` /

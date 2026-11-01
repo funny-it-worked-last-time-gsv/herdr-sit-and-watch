@@ -31,7 +31,8 @@ function devStrip(dev, mood, level, m) {
     .child(row([txt("mood", 10, "#9aa3b0"), ...DEV_MOODS.map((k) => chip(k, (dev.mood ?? "auto") === k, (cx) => dev.onMood(k === "auto" ? null : k, cx), `md-${k}`))]))
     .child(row([txt("fire", 10, "#9aa3b0"), ...DEV_FIRE.map((k) => chip(k, false, (cx) => dev.onFire(k, cx), `fx-${k}`))]))
     .child(row([txt("pets", 10, "#9aa3b0"), ...["auto", ...Object.keys(PET_SCENES)].map((k) =>
-      chip(k, (dev.pets ?? "auto") === k, (cx) => dev.onPets(k === "auto" ? null : k, cx), `pt-${k}`))])));
+      chip(k, (dev.pets ?? "auto") === k, (cx) => dev.onPets(k === "auto" ? null : k, cx), `pt-${k}`)),
+      chip("wander", false, (cx) => dev.onWander(cx), "pt-wander")])));
 }
 
 
@@ -140,7 +141,7 @@ export function panel(list, party = false, opts = {}) {
         .child(r(devW + 10, 16, 3, devH - 6, "#3a3a3a")).child(r(devW + 3, 4, 17, 13, "#d97a3a"))
         .child(spectator(level, ds, "pdev", { ...him, canDown: poses.snowy === "knock" || poses.simba === "knock" }).absolute().left(0).top(16))
         // Buddy, Snowy and Simba: asleep on the chair when he's not in it, else reacting to him
-        .children(pets(poses, cornerH, ds, "pet"))
+        .children(pets(poses, cornerH, ds, "pet", opts.walk ?? {}))
         // clicking him: on top of the drawing, so the pixels can't swallow it
         .child(div().id("saw-dev").absolute().left(0).top(16).w(devW).h(devH).cursor_pointer()
           .when(!!opts.onDev, (e) => e.on_click((_e, cx) => opts.onDev(cx))))
