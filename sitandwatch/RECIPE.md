@@ -12,15 +12,20 @@ sets off a party popper when one finishes.
 
 One mod, `sitandwatch`, drawn as a narrow panel (made for a sidebar about 260–560px wide). Pixel text
 is `PxPlus IBM VGA 8x16` (shipped in `mods/sitandwatch/fonts/`). Nothing is rounded. The panel is a
-flex column, top to bottom, on floor colour `#e2a465`:
+flex column, top to bottom, on the floor colour from Options (`FLOORS` in `rules.js`: slate
+`#6b7a8f` by default; tan `#e2a465`, deep teal `#3e6668`, sage `#95a88a`, night navy `#2e3a55`):
 
 1. **Header**, 23px, `#8796b0` with a 3px `#7a4a28` bottom border: `N/M AT IT` (12px, `#fff8e1`,
-   working agents over all agents) on the left, `DEMO` (10px, `#dfe6f0`) on the right. In the demo
-   it grows to 30px, turns `#6b3f1f` and reads `DEMO i/6  <state>` (10px) with `STOP` in `#ffd86a`.
+   working agents over all agents, running sub-agents counted in both) on the left, then a gap, the
+   42×8 power bar (`#2b2f3a`, 1px `#7a4a28` frame, `#ffd86a` fill), `OPTS`, `DEMO` (10px, `#dfe6f0`)
+   and `_` (minimise). In the demo it grows to 30px, turns `#6b3f1f` and reads
+   `DEMO i/27  <state>` (10px) with `STOP` in `#ffd86a`. Developer mode adds its strip below.
 2. **Desks**, filling the remaining height, `overflow_hidden`, 6px top padding: one 84×56 tile per
-   agent in a centred wrapping row. A tile holds a 32×20 `#2b2f3a` monitor (28×16 screen), a
-   6×3 stand, a 52px desk (`#f0dcb0` top 6px, `#d4b27c` front 4px) and a robot at scale 1.5 seen
-   from behind. The tab name (10px) shows only when tiles are at least 60px tall, so not by default.
+   agent in a centred wrapping row (84×68), in last-active order. A tile holds a 32×20 `#2b2f3a`
+   monitor (28×16 screen), a 6×3 stand, a 52px desk (`#f0dcb0` top 6px, `#d4b27c` front 4px, one
+   element) and a robot at scale 1.5 seen from behind, with its name under the chair (10px,
+   `deskName()`). On top, when they apply: the waiting time on a finished agent's screen (`12m`),
+   cobwebs on an old desk, and a `2/5` sub-agent tag by the monitor.
    - Screen colours: working `#1f4d3a` with three `#7ee0a0` 2px code lines growing and shrinking;
      blocked `#a8322a` with a blinking `!`; done `#24406e`; idle `#36404c`.
    - **Robot**, 16×20 art pixels, about 12 plain rectangles: shoulders in the agent's colour
@@ -39,6 +44,10 @@ flex column, top to bottom, on floor colour `#e2a465`:
      `#2f3a5a` trousers, black shoes, a red-and-white `#c9302c`/`#f4f4f0` scarf round his neck, a
      striped popcorn bucket on his lap. A speech bubble (white, 2px `#3b2a1c` border, 12px text)
      sits above his right shoulder.
+   - **The pets** (see Pets below): Buddy left of the chair, Snowy and Simba right of it, or all
+     three curled on the empty chair.
+4. **Minimised**, the whole panel is a 30px strip (`N/M AT IT`, power bar, his face, `+`) or, docked
+   left or right, a 40px rail (face, count, vertical bar, `+`).
 
 ## How it behaves
 
@@ -155,8 +164,9 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - `mods/sitandwatch/rules.js`: every decision, no imports: `devLevel`, `resolveMood`, `effectiveMood`, the
   `ONE_SHOT` table and `startOneShot`, `petPoses`, options, the power meter, desk order and cobwebs,
   `findBlock` for minimise, the can and the popcorn.
-- `mods/sitandwatch/options.js`: the Options dialog. `lines.js`: everything he and the pets say.
-- `mods/sitandwatch/lines.js`: what he says, `pool()` and `pickLine()`.
+- `mods/sitandwatch/options.js`: the Options dialog.
+- `mods/sitandwatch/lines.js`: what he and the pets say, `pool()` and `pickLine()`.
+- `mods/sitandwatch/names.js` and `privacy.js`: every drawn name, through screenshot mode's renames.
 - `mods/sitandwatch/art.js`: sprites as rows of palette letters (`sprite(rows, palette, s)` draws one
   `div` per colour run), `bot()` from plain rectangles, `spectator(level, s, id, { panic, party, ship, mood, fx, ... })`,
   `explosion()`.
@@ -167,12 +177,41 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   `hc(["ls", "--all", "--json"])` every 10s in a `cx.spawn`, live terminals with a status, merged by
   address. The same poll finds crashes and asks `hc get` for status times. A 1s timer advances the
   demo, ends the party and counts down the one-shots.
-- Commands through `nextCommand()`: `demo`, `dev`, `chaos`, `ship` and `ship-<kind>`, `fire-<event>`,
-  `mood-<name>`, `level-<n>`. Calls `agents()`,
+- Commands through `nextCommand()`: `demo`, `demo-<n>`, `dev`, `chaos`, `options`, `min`, `wander`,
+  `ship` and `ship-<kind>`, `fire-<event>`, `mood-<name|auto>`, `level-<n|real>`, `pets-<scene|auto>`,
+  `desks-<1h|8h|real>`, and `sub-start-<terminal>-<id>` / `sub-stop-...` from the sub-agent hook. Calls `agents()`,
   `hc` (`ls`, `get`), `run("agent.focus")`.
   No network, no `exec`, no files outside its folder.
 - Based on [zuccs/herdr-office-layout](https://github.com/zuccs/herdr-office-layout) (MIT): its
   `art.js` helpers, palette, font and office view.
+
+## Pets
+
+- `PETS` in `art.js`: `{ name, kind, coat }`, Buddy (beagle: `B #7a4a24` brown, `T #d9a25a` tan,
+  `W #f4f0e6` white, `K #2a2320` nose and eyes), Snowy (cat, white `#f4f0e6`) and Simba (cat,
+  orange `#e0913a` / `#b86a24`), inner ears `#f2b8c0`. Edit it to make them your own pets.
+- Drawn as rows of palette letters (`POSE` in `art.js`) at the corner's scale 3, packed by
+  `blocks()`/`pack()` into a few layered rectangles (cached), so a pet costs a handful of divs.
+  Cat: `sit` and `back` 9×12, `curl` 12×6 (knocks use `sit` raised onto the armrest or chair back).
+  Beagle: `sit`, `paw`, `howl` 12×13, `eat` 14×6, `curl` 16×6. Curled and eating pets get a 1px
+  outline so they read against the chair and the floor.
+- Placement (`HOME`): Buddy at -44, Snowy at 100, Simba at 132 (x from the chair's left), feet on
+  the rug; curled on the empty chair: Snowy on the back, Buddy on the seat, Simba on the armrest.
+- `petPoses()` in `rules.js`, the loudest moment wins:
+
+  | When | Buddy | Snowy | Simba |
+  | --- | --- | --- | --- |
+  | Empty chair | curl (seat) | curl (back) | curl (armrest) |
+  | Something ships | howl (`AWOO`) | sit | sit |
+  | POWER! | sit, awake | sit, awake | sit, awake |
+  | Meltdown (all blocked) | paw over eyes | sit | sit |
+  | Popcorn spilled | eat | sit | sit |
+  | Can knock (10+ min at level 2+) | sit | sit | knock (back, once the pillow's there) |
+  | Standing ovation | sit | back | back |
+  | After 10pm | as above | knocks instead of Simba | gone |
+  | Otherwise | sit | sit | sit |
+
+  A pet switched off in Options is not drawn (Snowy knocks if Simba is off).
 
 ## Pets wandering
 
