@@ -189,11 +189,12 @@ const POSE = {
       "OOOOOOOOO..",
     ],
     curl: [
-      "..o.oOOO...",
-      ".OOOOOOOOO.",
-      "OKKOOoOOoOO",
-      "OOOOOOOOOOo",
-      ".OOOOOOOOO.",
+      "..O.O.......",
+      ".OiOOOOOO...",
+      "OOOOOOOOOOO.",
+      "OKKOOOOOOOOO",
+      "OOOOOOOOOOOO",
+      ".ooooooooooO",
     ],
   },
   beagle: {
@@ -243,29 +244,43 @@ const POSE = {
       ".WWWWWWWWWW.",
     ],
     eat: [
-      "..BB..........",
-      ".BTTTKKKKKK...",
-      "TTKTTKKKKKKKT.",
-      "WWWTTTTTTTTTT.",
-      ".W..WW....WW..",
+      "..........BB..",
+      ".KKKKK...BTTB.",
+      "KKKKKKKKBTTTTB",
+      "TKKKKKKKTTKTTB",
+      "TTKKKKKKTTTTWW",
+      ".WWTTTTWW.WWWK",
     ],
     curl: [
-      "....BB.KKKK....",
-      "..BTTTTKKKKKK..",
-      ".TKKTTTTKKKKKT.",
-      "TWWWTTTTTKKKKTT",
-      ".WW.TTTTTTTTWW.",
+      "........KKKKK...",
+      "..TTT..KKKKKKKT.",
+      ".BTTTB.KKKKKKKKT",
+      ".BKKTBTTTTTTTTTT",
+      ".BTTTTTTTTTTTTTT",
+      "..WWWWWW.WWW.WW.",
     ],
   },
 };
 
 // One pet in one pose, drawn at scale s; left mirrors it to face the other way.
-export function pet(p, pose, s, left = false) {
-  const rows = POSE[p.kind][pose];
+// outline: a 1px dark edge round the shape, for poses drawn over the red armchair or in a heap.
+export function pet(p, pose, s, left = false, outline = false) {
+  let rows = POSE[p.kind][pose];
+  if (outline) rows = outlined(rows);
   const pal = p.kind === "cat"
     ? { O: p.coat.O, o: p.coat.o, i: p.coat.i, W: "#ffffff", K: "#2a2320", N: "#e07a8a" }
     : { B: p.coat.B, T: p.coat.T, W: p.coat.W, K: p.coat.K };
-  return blocks(left ? flip(rows) : rows, pal, s);
+  return blocks(left ? flip(rows) : rows, { ...pal, X: "#1c1a24" }, s);
+}
+// The shape grown by one pixel all round, the new pixels "X" (painted first, under the pet).
+function outlined(rows) {
+  const W = Math.max(...rows.map((r) => r.length)) + 2, H = rows.length + 2;
+  const at = (x, y) => rows[y - 1]?.[x - 1] ?? ".";
+  return Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => {
+    if (at(x, y) !== ".") return at(x, y);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (at(x + dx, y + dy) !== ".") return "X";
+    return ".";
+  }).join(""));
 }
 
 // Where each pet goes in the corner, in panel px from the chair's left edge (the corner is
@@ -282,7 +297,9 @@ export function pets(poses, cornerH, s, id, walk = {}) {
   const seat = 16 + 17 * 3, back = 16 + 3 * 3, arm = 16 + 9 * 3;   // chair seat, back and armrest tops
   const at = (x, bottom, p, pose, left = false) => {
     const phase = (pose === "sit" || pose === "back") && walk[p.name];
-    if (!phase) return div().absolute().left(x).top(bottom - POSE[p.kind][pose].length * s).child(pet(p, pose, s, left)).id(`${id}-${p.name}-${pose}`);
+    const edge = pose === "curl" || pose === "eat";       // outlined: over the chair, or low on the floor
+    const h = (POSE[p.kind][pose].length + (edge ? 2 : 0)) * s;
+    if (!phase) return div().absolute().left(x - (edge ? s : 0)).top(bottom - h + (edge ? s : 0)).child(pet(p, pose, s, left, edge)).id(`${id}-${p.name}-${pose}`);
     if (phase === "away") return null;
     // Walking: one id from start to end, so changing left slides it; a little bob for the steps.
     const going = phase === "out0" || phase === "out1", gone = phase === "out1" || phase === "in0";
@@ -295,16 +312,24 @@ export function pets(poses, cornerH, s, id, walk = {}) {
   const out = [];
   // Buddy: by the chair; at the popcorn when it's spilled (under the right of the chair)
   const b = poses.buddy;
+  // asleep: a static "z" over a sleeper (static, so nothing moves while nothing happens)
+  const z = (x, y, name) => out.push(div().absolute().left(x).top(y).id(`${id}-${name}-z`).child(txt("z", 10, "#fff8e1")));
   if (b === "gone") { /* switched off in Options */ }
-  else if (b === "curl") out.push(at(12, seat + 5, buddy, "curl"));
-  else if (b === "eat") out.push(at(22, floor, buddy, "eat", true));   // nose to the popcorn
+  else if (b === "curl") { out.push(at(8, seat + 4, buddy, "curl")); z(30, seat - 20, "Buddy"); }
+  else if (b === "eat") {                                    // at his spot, nose in the popcorn he dragged over
+    out.push(at(-52, floor, buddy, "eat"));
+    for (const [x, y] of [[-6, 4], [-2, 7], [-9, 8], [1, 3]]) out.push(r(x, floor - y - 3, 3, 3, "#fff6c8"));
+  }
   else out.push(at(-44, floor, buddy, b));
   if (b === "howl" && b !== "gone") out.push(div().absolute().left(-48).top(floor - 13 * s - 16).id(`${id}-awoo`)
     .child(txt("AWOO", 10, "#3b2a1c").frames(["AWOO", "awoo", "AWOOO"], 400)));
   // The cats: past the lamp, or curled on the chair, or the knocker up on the right armrest
   const cat = (p, pose, spot) => {
     if (pose === "gone") return;
-    if (pose === "curl") out.push(spot === 0 ? at(22, back + 3, p, "curl") : at(30, seat - 6, p, "curl", true));
+    if (pose === "curl") {
+      if (spot === 0) { out.push(at(20, back + 2, p, "curl")); z(52, back - 22, p.name); }   // Snowy on the chair back
+      else { out.push(at(60, arm + 2, p, "curl", true)); z(88, arm - 20, p.name); }          // Simba on the right armrest
+    }
     else if (pose === "knock") out.push(at(56, arm + 2, p, "sit", true));
     else out.push(at(spot === 0 ? 100 : 132, floor, p, pose, pose !== "back"));
   };
