@@ -1,5 +1,28 @@
 # herdr-sit-and-watch
 
+![Sit & Watch: your agents work. You watch from the armchair.](sitandwatch/preview.png)
+
+**Sit & Watch** is the Herdr sidebar where your agents are little robots at their desks and you are the
+unhinged developer in the red armchair, getting progressively more unwell as they cook.
+
+Your agents are cooking.  
+You are not.
+
+Sit & Watch drops a little red armchair in the corner of Herdr. Every agent is a tiny robot at a desk.
+You are the developer in the chair with the popcorn, the foam finger, and the increasingly unhinged
+commentary.
+
+One agent: quiet but lethal.  
+Two: "go on son".  
+Four: standing ovation, confetti, and the realisation that you have left your body.  
+PR merged: KABOOM.  
+All of them need you at once: face down in the popcorn.
+
+The pets judge you. The power bar fills. The speech bubbles get worse. You cannot look away.
+
+Install it. Sit down. Lose the plot in the best possible way. No network. Just you, the chair, and
+the robots that are better at your job than you are.
+
 ![Are you sure? Yes](are-you-sure.png)
 
 A sidebar panel for the [Herdr app](https://herdr.dev). Your agents are little robots at their

@@ -42,7 +42,7 @@ flex column, top to bottom, on the floor colour from Options (`FLOORS` in `rules
      `#a8323f` tops, seat, `#4a2a14` legs.
    - **Developer**, front view: brown hair `#3a2618`, skin `#f1c9a5`, grey `#6a6f7a` shirt, navy
      `#2f3a5a` trousers, black shoes, a red-and-white `#c9302c`/`#f4f4f0` scarf round his neck, a
-     striped popcorn bucket on his lap. A speech bubble (white, 2px `#3b2a1c` border, 12px text)
+     striped popcorn bucket on his lap. A speech bubble (white, 2px `#3b2a1c` border, 12px text, in a 38-art-pixel frame, 116px at the sidebar's scale: long lines wrap there, short ones shrink to fit)
      sits above his right shoulder.
    - **The pets** (see Pets below): Buddy left of the chair, Snowy and Simba right of it, or all
      three curled on the empty chair.
