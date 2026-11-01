@@ -32,7 +32,7 @@ const LINES_OF = (k) => LINES[k] ?? [];
 const { clock, world, makeCx, reseed, texts, ids, count, walk, sendCommand } = S;
 
 // Intended differences from the golden (new features), and the element budget headroom.
-const ALLOWED = { newChips: ["power", "petPoke", "canKnock", "subagent"], newOneShots: ["powerUp", "petPoke"], newDemoStates: 2 };
+const ALLOWED = { newChips: ["power", "petPoke", "canKnock", "subagent"], newOneShots: ["powerUp", "petPoke"], newDemoStates: 3 };
 const BUDGET_HEADROOM = 60;
 
 // ---- harness ----------------------------------------------------------------
@@ -136,14 +136,16 @@ function captureDemo() {
   const out = [], counts = [];
   const { o } = mount();
   o.demoAt = clock.now;
-  for (let i = 0; i < 24; i++) for (let sec = 0; sec < 5; sec++) {
+  // every state the demo has (its header says how many), so the budget and ERR checks see them all
+  const total = Number(/^DEMO \d+\/(\d+)/.exec(texts(render(o, [])).find((t) => /^DEMO \d/.test(t)) ?? "")?.[1] ?? 0);
+  for (let i = 0; i < total; i++) for (let sec = 0; sec < 5; sec++) {
     clock.now = o.demoAt + i * 5000 + sec * 1000;
     const tree = render(o, []);
     noErr(tree, `demo ${i}`);
     out.push(observe(tree));
     if (sec === 0) counts.push(count(tree));
   }
-  return { states: out, counts };
+  return { states: out, counts, total };
 }
 
 // The one-shot lists, by behaviour: the dev chips, what each fire sets, what the 1s timer counts down.
@@ -258,8 +260,11 @@ diffMap("pin", snap.pins, deref(g.pins));
 diffMap("ship", snap.ships, deref(g.ships));
 // Demo frames: the header's total ("DEMO 8/24") grows with each added demo state (ALLOWED.newDemoStates);
 // everything else in a frame, his mood, level and lines included, must match.
+// The golden's frames must match the first frames now; the states added since are budget- and ERR-checked (captureDemo)
+// but not compared, and their number must be exactly ALLOWED.newDemoStates.
 const demoTotal = (o) => o.replace(/DEMO (\d+)\/\d+/, "DEMO $1/N");
-diffMap("demo", snap.demo.states.map(demoTotal), g.demo.map((i) => demoTotal(g.obs[i])));
+diffMap("demo", snap.demo.states.slice(0, g.demo.length).map(demoTotal), g.demo.map((i) => demoTotal(g.obs[i])));
+if (snap.demo.total !== g.demo.length / 5 + ALLOWED.newDemoStates) fails.push(`demo: ${snap.demo.total} states, want the golden's ${g.demo.length / 5} + ${ALLOWED.newDemoStates} allowed`);
 const chipsNow = snap.oneShots.chips.filter((c) => !ALLOWED.newChips.includes(c));
 if (JSON.stringify(chipsNow) !== JSON.stringify(g.oneShots.chips)) fails.push(`dev chips: was ${g.oneShots.chips}, now ${chipsNow}`);
 diffMap("fire", snap.oneShots.fire, g.oneShots.fire);
@@ -1129,6 +1134,9 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (o2.min?.id !== "sitandwatch" || o2.min?.axis !== "column") fails.push(`min: a restart should keep it minimised, got ${JSON.stringify(o2.min)}`);
   // Review fix: a layout whose block is full size (another layout reusing the id, or Herdr put it back) forgets the strip.
   world.layout = tree([blk()]);
+  const o5 = new Office(); o5.init(world.props, makeCx());           // a reload right after minimising: block not shrunk yet
+  if (o5.min?.id !== "sitandwatch") fails.push(`min: a reload within 3s of minimising should keep the strip, got ${JSON.stringify(o5.min)}`);
+  jump(4000);
   const o3 = new Office(); o3.init(world.props, makeCx());
   let kept3 = "x"; try { kept3 = localStorage.getItem("min"); } catch {}
   if (o3.min || kept3 != null) fails.push(`min: a full-size block after a restart should forget the strip, got min=${JSON.stringify(o3.min)} saved=${kept3}`);
@@ -1209,52 +1217,96 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   const km = [R.keepMin(mn, { ok: false, reason: "none" }), R.keepMin(mn, null), R.keepMin(mn, blkOf({ weight: 1 })), R.keepMin(mn, blkOf({ px: 30 })),
     R.keepMin(mn, blkOf({ px: 300 })), R.keepMin(mn, blkOf({ px: 30 }, "other")), R.keepMin(mn, blkOf({ px: 40 }, "sitandwatch", "row"))].map((x) => (x ? "keep" : "drop")).join(",");
   if (km !== "keep,keep,keep,keep,drop,drop,drop") fails.push(`fixes: keepMin should keep unless it sees an open block, another id or axis, got ${km}`);
+  // A reload within MIN_GUARD_MS of minimising: the block may still read open; keep the strip.
+  const fresh = { ...mn, at: 10000 };
+  const kg = [R.keepMin(fresh, blkOf({ px: 300 }), 12000), R.keepMin(fresh, blkOf({ px: 300 }), 14000)].map((x) => (x ? "keep" : "drop")).join(",");
+  if (kg !== "keep,drop") fails.push(`fixes: keepMin should keep a strip saved under 3s ago, got ${kg}`);
+  // A provisional finish time (seen before hc's status time arrived) gives way to hc's earlier one, never a later one.
+  const tw = [R.trackWaiting({ a: 100 }, [{ address: "a", status: "done" }], () => 50), R.trackWaiting({ a: 100 }, [{ address: "a", status: "done" }], () => 200)];
+  if (JSON.stringify(tw) !== '[{"a":50},{"a":100}]') fails.push(`fixes: a done agent should keep the earliest finish time it learns, got ${JSON.stringify(tw)}`);
+  // A failed poll isn't proof a helper left (Codex): one failure keeps its waiting time, three in a row (hc broken) drop it.
+  S.dropCommandWaiters();                                    // nothing left over from the loops above
   localStorage.setItem("waiting", JSON.stringify({ h8: clock.now - 5 * MIN }));
   const o4 = new Office(); o4.init(world.props, makeCx());
   world.agents = []; world.hcLs = undefined;                         // hc answers garbage: the poll fails
-  S.advance(10000); await S.settle(); await S.settle(); o4.render();
-  if (o4.waiting?.h8 != null) fails.push("fixes: a failed first poll should still let unlisted waiters go");
+  await S.settle(); await S.settle(); o4.render();
+  if (o4.waiting?.h8 == null) fails.push(`fixes: one failed poll shouldn't drop a helper's waiting time, got ${JSON.stringify(o4.waiting)}`);
+  S.advance(20000); await S.settle(); await S.settle(); o4.render();
+  if (o4.waiting == null || o4.waiting.h8 != null) fails.push(`fixes: three failed polls in a row should let unlisted waiters go, got ${JSON.stringify(o4.waiting)} fails=${o4.pollFails}`);
   world.hcLs = { terminals: [] };
 }
 
 // ---- height: the Options setting and height-<px> ---------------------------------------------
 {
-  // Value: protects=the chosen height being applied to the panel's block (column only, not while minimised, once per choice,
-  //   again after a restart), `height-<px>` setting it and `height-layout` handing it back to the layout; fails_when=the tick
-  //   stops resizing, resizes every second, resizes a docked (row) block or a minimised one, or the command stops storing it;
-  //   why_new=new feature; seam=none (world.layout/world.runs exist); no_claim=Herdr keeping the px across its own restart
+  // Value: protects=planHeight(): a new choice resizes once (a layout min up to that height is fine), the same choice
+  //   leaves a drag alone except on a first tick with the block back at its old size (Herdr restarted), "layout" hands the
+  //   old size back, a docked/missing/too-small block says why, nothing while minimised; and heightTick: a typo ignored,
+  //   a refusal toasts once and retries after 30s; fails_when=any of those rules breaks; why_new=new feature, rebuilt after
+  //   the ship's adversarial review; seam=none (world.layout/runs/notes exist); no_claim=Herdr keeping px across a restart
   const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
-  const b = (px, axis = "column") => ({ ok: true, id: "sitandwatch", axis, size: px == null ? null : { px } });
-  const cases = [R.heightToApply(400, null, b(300), false), R.heightToApply(400, 400, b(300), false), R.heightToApply(400, null, b(400), false),
-    R.heightToApply(400, null, b(300, "row"), false), R.heightToApply(400, null, b(30), true), R.heightToApply(null, null, b(300), false), R.heightToApply(400, null, { ok: false }, false)];
-  if (JSON.stringify(cases) !== "[400,null,null,null,null,null,null]") fails.push(`height: heightToApply should resize only a new choice, in a column, not minimised, got ${JSON.stringify(cases)}`);
+  const b = (px, extra = {}) => ({ ok: true, id: "sitandwatch", axis: "column", size: px == null ? null : { px }, ...extra });
+  const P = (height, saved, blk, first = false, minimised = false) => R.planHeight({ height, saved, b: blk, minimised, first });
+  const sv = { id: "sitandwatch", h: 400, from: { px: 300 } };
+  const show = (p) => `${JSON.stringify(p.resize)}|${p.saved ? p.saved.h + "<" + JSON.stringify(p.saved.from) : "-"}|${p.warn ?? ""}`;
+  const plans = [
+    P(400, null, b(300)),                                           // new choice
+    P(400, sv, b(400)),                                             // already set
+    P(400, sv, b(350)),                                             // dragged: leave it
+    P(400, sv, b(350), true),                                       // reload after a drag: leave it
+    P(400, sv, b(300), true),                                       // restart: back at 300, set again
+    P(400, sv, b(300), false),                                      // not a first tick: leave it
+    P(null, sv, b(400)),                                            // layout: back to 300
+    P(null, { ...sv, from: null }, b(400)),                         // layout, no old size: weight 1
+    P(null, null, b(400)),                                          // layout, nothing set: nothing
+    P(500, sv, b(400)),                                             // a new choice keeps the first old size
+    P(400, null, { ok: false, reason: "min", id: "sitandwatch", min: 220, axis: "column", size: { px: 300 } }),   // min 220 is fine for 400
+    P(200, null, { ok: false, reason: "min", id: "sitandwatch", min: 220, axis: "column", size: { px: 300 } }),   // too small
+    P(400, null, b(300, { axis: "row" })),                          // docked
+    P(400, null, { ok: false, reason: "ambiguous" }),               // two panels
+    P(500, sv, b(30), false, true),                                 // minimised, a new choice: nothing yet
+  ].map(show);
+  const want = ['{"px":400}|400<{"px":300}|', 'null|400<{"px":300}|', 'null|400<{"px":300}|', 'null|400<{"px":300}|', '{"px":400}|400<{"px":300}|',
+    'null|400<{"px":300}|', '{"px":300}|-|', '{"weight":1}|-|', 'null|-|', '{"px":500}|500<{"px":300}|', '{"px":400}|400<{"px":300}|',
+    'null|-|small', 'null|-|row', 'null|-|ambiguous', 'null|400<{"px":300}|'];
+  plans.forEach((p, n) => { if (p !== want[n]) fails.push(`height: plan case ${n + 1} should be ${want[n]}, got ${p}`); });
+
   S.dropCommandWaiters();
   const { o } = mount();
-  const lay = (px) => ({ id: "root", type: "row", children: [{ id: "sidebar", type: "column", children: [{ id: "sitandwatch", type: "block", content: { mod: "sitandwatch" }, size: { px } }] }] });
+  const lay = (px, extra = {}) => ({ id: "root", type: "row", children: [{ id: "sidebar", type: "column", children: [{ id: "sitandwatch", type: "block", content: { mod: "sitandwatch" }, size: { px }, ...extra }] }] });
   world.layout = lay(300); render(o, ["idle"]);
   const send = async (c) => { S.sendCommand(c); await S.settle(); await S.settle(); };
+  const sized = () => world.runs.filter(([n]) => n === "layout.resize").map(([, a]) => JSON.stringify(a));
   world.runs = []; await send("height-400"); S.advance(1000);
-  const sized = () => world.runs.filter(([n]) => n === "layout.resize").map(([, a]) => a.px);
-  if (JSON.stringify(sized()) !== "[400]") fails.push(`height: height-400 should resize the block to 400 once, got ${JSON.stringify(sized())}`);
-  S.advance(3000);
-  if (sized().length !== 1) fails.push(`height: it shouldn't resize again every second, got ${JSON.stringify(sized())}`);
-  const o2 = new Office(); o2.init(world.props, makeCx()); world.runs = []; S.advance(1000);   // a restart: back to the layout's 300
-  if (JSON.stringify(sized()) !== "[400]") fails.push(`height: after a restart the chosen height should come back, got ${JSON.stringify(sized())}`);
-  world.runs = []; o2.min = { id: "sitandwatch", axis: "column" };
-  world.shared["sitandwatch.options"] = { ...world.shared["sitandwatch.options"], height: 500 }; S.advance(1000);
-  if (sized().length) fails.push("height: a minimised panel shouldn't be resized");
-  o2.min = null; S.advance(1000);
-  if (JSON.stringify(sized()) !== "[500]") fails.push(`height: once it's not minimised the new height should apply, got ${JSON.stringify(sized())}`);
-  // Fix-check: a typo is ignored, not turned into "layout"; a refused resize says so.
-  await send("height-350"); await send("height-350");
-  if (R.readOptions(world.shared["sitandwatch.options"]).height !== 500) fails.push(`height: height-350 should be ignored, got ${R.readOptions(world.shared["sitandwatch.options"]).height}`);
-  world.notes = []; world.runResult = () => ({ error: "no room" });
-  world.shared["sitandwatch.options"] = { ...world.shared["sitandwatch.options"], height: 240 }; S.advance(1000);
-  if (!world.notes.some((n) => /refused to set my height to 240px: no room/.test(n.body))) fails.push(`height: a refused resize should toast, notes ${JSON.stringify(world.notes)}`);
-  world.runResult = null;
-  world.runs = []; await send("height-layout"); await send("height-layout"); S.advance(1000);
-  if (R.readOptions(world.shared["sitandwatch.options"]).height !== null || sized().length) fails.push("height: height-layout should hand the size back to the layout without resizing");
-  world.layout = null;
+  if (JSON.stringify(sized()) !== JSON.stringify(['{"id":"sitandwatch","px":400}'])) fails.push(`height: height-400 should resize to 400 once, got ${sized()}`);
+  world.layout = lay(400); S.advance(3000);
+  if (sized().length !== 1) fails.push(`height: it shouldn't resize again, got ${sized()}`);
+  await send("height-350"); if (R.readOptions(world.shared["sitandwatch.options"]).height !== 400) fails.push("height: height-350 (not offered) should be ignored");
+  // Refused: one toast, a retry 30s later.
+  world.runs = []; world.notes = []; world.runResult = () => ({ error: "no room" });
+  await send("height-500"); S.advance(1000); S.advance(5000);
+  const notes = world.notes.filter((n) => /Herdr refused to set my height: no room/.test(n.body)).length;
+  if (sized().length !== 1 || notes !== 1) fails.push(`height: a refusal should toast once and not retry at once, resizes ${sized().length} toasts ${notes}`);
+  world.runResult = null; S.advance(30000);
+  if (sized().length !== 2) fails.push(`height: a refused height should be retried after 30s, resizes ${sized().length}`);
+  // Docked in a row: says so once.
+  world.notes = []; world.layout = { id: "root", type: "row", children: [{ id: "sitandwatch", type: "block", content: { mod: "sitandwatch" }, size: { px: 300 } }] };
+  await send("height-240"); S.advance(3000);
+  if (world.notes.filter((n) => /docked in a row/.test(n.body)).length !== 1) fails.push(`height: a docked panel should say once why height does nothing, ${JSON.stringify(world.notes)}`);
+  world.layout = null; world.runs = [];
+}
+
+// ---- a knocking cat stays put, mid-wander or not --------------------------------------------
+{
+  // Value: protects=a cat knocking the can staying drawn on the armrest (or chair back) while a wander trip has it away;
+  //   fails_when=the knock's sit pose follows the walk state again (the cat vanishes while the can still falls);
+  //   why_new=Codex's structured review reproduced it; seam=none (pets() takes the walk map); no_claim=the timing in Herdr
+  const poses = { buddy: "sit", snowy: "sit", simba: "knock" };
+  const t = S.div().children(A.pets(poses, 116, 3, "pet", { Simba: "away", Snowy: "away" }));
+  const there = ids(t);
+  if (!there.includes("pet-Simba-sit")) fails.push("knock: a knocking Simba should stay drawn while a wander has him away");
+  if (there.includes("pet-Snowy-sit")) fails.push("knock: a sitting Snowy who's away should still go");
+  const tb = S.div().children(A.pets({ ...poses, simba: "knockBack" }, 116, 3, "pet", { Simba: "away" }));
+  if (!ids(tb).includes("pet-Simba-sit")) fails.push("knock: a knockBack Simba should stay drawn too");
 }
 
 // ---- the power bar: a terminal both in agents() and in hc's list counts once ---------------

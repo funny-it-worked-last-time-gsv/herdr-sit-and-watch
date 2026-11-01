@@ -301,8 +301,9 @@ export function pets(poses, cornerH, s, id, walk = {}, more = {}) {
   const click = (el, p) => more.onPet ? el.cursor_pointer()
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
     .on_click((_e, cx) => { cx.stop_propagation(); more.onPet(p.name, cx); }) : el;
-  const at = (x, bottom, p, pose, left = false) => {
-    const phase = (pose === "sit" || pose === "back") && walk[p.name];
+  // still: a reaction drawn with the sit pose (a knock) stays put, whatever a wander trip says
+  const at = (x, bottom, p, pose, left = false, still = false) => {
+    const phase = !still && (pose === "sit" || pose === "back") && walk[p.name];
     const edge = pose === "curl" || pose === "eat";       // outlined: over the chair, or low on the floor
     const h = (POSE[p.kind][pose].length + (edge ? 2 : 0)) * s;
     if (!phase) spots[p.name] = { x, top: bottom - h };
@@ -338,8 +339,8 @@ export function pets(poses, cornerH, s, id, walk = {}, more = {}) {
       if (spot === 0) { out.push(at(20, back + 2, p, "curl")); z(52, back - 22, p.name); }   // Snowy on the chair back
       else { out.push(at(60, arm + 2, p, "curl", true)); z(88, arm - 20, p.name); }          // Simba on the right armrest
     }
-    else if (pose === "knock") out.push(at(56, arm + 2, p, "sit", true));
-    else if (pose === "knockBack") out.push(at(26, back + 2, p, "sit", true));   // the pillow has the armrest
+    else if (pose === "knock") out.push(at(56, arm + 2, p, "sit", true, true));
+    else if (pose === "knockBack") out.push(at(26, back + 2, p, "sit", true, true));   // the pillow has the armrest
     else out.push(at(spot === 0 ? 100 : 132, floor, p, pose, pose !== "back"));
   };
   cat(snowy, poses.snowy, 0);

@@ -335,12 +335,15 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - Stored in `shared("sitandwatch.options")`, read through `readOptions()` (any missing or broken value
   falls back to the default). Shared rather than `localStorage`, which is per copy: the dialog is a
   copy of its own.
-- Height: `heightTick()` in `main.js`, once a second in the copy that owns the commands: when the chosen
-  height isn't applied yet (and at startup, since a Herdr restart puts the block back to the layout's
-  size), `heightToApply()` decides, then `layout.resize { id, px }`. Only for a block in a column (docked
-  in a row its size is a width), never while minimised, and not when it's already that size.
-  `height-<px|layout>` sets the option. For a drag handle, the layout's `sidebar` column needs
-  `"resizable": true`.
+- Height: `heightTick()` in `main.js`, once a second in the copy that owns the commands, asks
+  `planHeight()` in `rules.js`, which keeps `localStorage "height"` = `{ id, h, from }` (the height set
+  and the block's size before). A new choice resizes once (`layout.resize { id, px }`; a layout `min`
+  above the strip is fine up to the height chosen). The same choice leaves a drag of the sidebar line
+  alone, except on a copy's first tick with the block back at `from` (Herdr restarted): set again.
+  `layout` resizes back to `from` (or weight 1). Never while minimised. A docked (row), missing,
+  ambiguous or too-small block says why once (`HEIGHT_TROUBLE`); a refused resize says so once and
+  is retried 30s later. `height-<240|300|400|500|layout>` sets the option; anything else is ignored.
+  For a drag handle, the layout's `sidebar` column needs `"resizable": true`.
 
 ## Watch out
 
