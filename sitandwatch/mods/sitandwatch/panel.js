@@ -2,7 +2,7 @@ import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run } from "herdr";
 import { ink, SCREEN, r, txt, look, bot, spectator, stance, pets, explosion, DEV_W, DEV_H } from "./art.js";
-import { DEV_FIRE, effectiveMood, isNight } from "./rules.js";
+import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES } from "./rules.js";
 
 // ---- developer mode -------------------------------------------------------
 // `herdr-app do sitandwatch.dev` shows a strip under the header: the numbers the mood is picked
@@ -28,7 +28,9 @@ function devStrip(dev, mood, level, m) {
     .when(dev.open, (e) => e.child(row([txt("level", 10, "#9aa3b0"), chip("real", dev.level == null, (cx) => dev.onLevel(null, cx), "lv-real"),
       ...[0, 1, 2, 3].map((n) => chip(String(n), dev.level === n, (cx) => dev.onLevel(n, cx), `lv-${n}`))]))
     .child(row([txt("mood", 10, "#9aa3b0"), ...DEV_MOODS.map((k) => chip(k, (dev.mood ?? "auto") === k, (cx) => dev.onMood(k === "auto" ? null : k, cx), `md-${k}`))]))
-    .child(row([txt("fire", 10, "#9aa3b0"), ...DEV_FIRE.map((k) => chip(k, false, (cx) => dev.onFire(k, cx), `fx-${k}`))])));
+    .child(row([txt("fire", 10, "#9aa3b0"), ...DEV_FIRE.map((k) => chip(k, false, (cx) => dev.onFire(k, cx), `fx-${k}`))]))
+    .child(row([txt("pets", 10, "#9aa3b0"), ...["auto", ...Object.keys(PET_SCENES)].map((k) =>
+      chip(k, (dev.pets ?? "auto") === k, (cx) => dev.onPets(k === "auto" ? null : k, cx), `pt-${k}`))])));
 }
 
 
@@ -105,6 +107,10 @@ export function panel(list, party = false, opts = {}) {
     linger: (m?.fx?.linger ?? 0) > 0, poke: m?.fx?.poke ?? 0, pokeLine: m?.pokeLine ?? "",
     idleTalk: m?.idleTalk ?? Math.floor(Date.now() / 30000) % 6 === 0, idleN: Math.floor(Date.now() / 180000),
   };
+  // The pets react to what he's doing; developer mode can force a scene.
+  const st = stance(level, him);
+  const real = { present: st.present, ship: ship != null, mood, spilled: st.spilled, knock: false, ovation: st.L === 3, night: him.night };
+  const poses = petPoses(dev?.pets ? PET_SCENES[dev.pets] : real);
   // Nothing here depends on the panel's measured size: flex does all the fitting,
   // so resizing the column never needs a re-render.
   return v_flex().id("saw-panel").size_full().overflow_hidden().bg("#e2a465")
@@ -122,9 +128,9 @@ export function panel(list, party = false, opts = {}) {
       .child(div().relative().w(devW).h(cornerH)
         .child(r(-12, cornerH - 16, devW + 24, 10, "#5e1420"))
         .child(r(devW + 10, 16, 3, devH - 6, "#3a3a3a")).child(r(devW + 3, 4, 17, 13, "#d97a3a"))
-        .child(spectator(level, ds, "pdev", him).absolute().left(0).top(16))
-        // Buddy, Snowy and Simba: asleep on the chair when he's not in it, else on the floor
-        .children(pets({ present: stance(level, him).present, cornerH }, ds, "pet"))
+        .child(spectator(level, ds, "pdev", { ...him, canDown: poses.snowy === "knock" || poses.simba === "knock" }).absolute().left(0).top(16))
+        // Buddy, Snowy and Simba: asleep on the chair when he's not in it, else reacting to him
+        .children(pets(poses, cornerH, ds, "pet"))
         // clicking him: on top of the drawing, so the pixels can't swallow it
         .child(div().id("saw-dev").absolute().left(0).top(16).w(devW).h(devH).cursor_pointer()
           .when(!!opts.onDev, (e) => e.on_click((_e, cx) => opts.onDev(cx))))
