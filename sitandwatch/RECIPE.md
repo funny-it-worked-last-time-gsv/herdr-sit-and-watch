@@ -305,7 +305,10 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   swallowed. Herdr's `herdr-app ls` lists `sub_agents` per terminal, but mods can't read it.
 - `parseSubCommand()` reads them; `this.subs = { id: { parent, at, doneAt } }` (a stop for an unknown
   id is ignored). `pruneSubs()` treats a parent's sub-agents as one batch: kept while any runs, all
-  dropped 8s (`SUB_DONE_MS`) after the last stops; one never stopped goes after an hour (`SUB_TTL_MS`).
+  dropped 8s (`SUB_DONE_MS`) after the last stops; one never stopped (Esc, a killed session) goes after 15
+  minutes (`SUB_TTL_MS`). Kept in localStorage (`subs`) across reloads, so a stop for one running before
+  still lands. A stop for an id never seen leaves a hidden tombstone for 8s, so a start handed on late
+  between panel copies makes no ghost.
 - `subDesks()` turns them into agents (`<parent>~<id>`, working or done) for everything that reads
   agents: the metrics (welcome, finish, level), the power bar. Then `foldSubs()` takes them off the
   desks and gives the parent's desk `subs: { done, total, running }`, drawn as `psub-<address>`: a

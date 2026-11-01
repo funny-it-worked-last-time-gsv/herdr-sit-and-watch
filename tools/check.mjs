@@ -1084,13 +1084,25 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (badge(t) !== "2/2") fails.push(`subs: all stopped should read 2/2, got ${badge(t)}`);
   S.advance(9000); t = render(o, ["idle", "idle"]);
   if (badge(t) != null) fails.push("subs: the badge should go 8s after the last one stops");
-  await send("sub-stop-a0-zzz999");                     // never started: ignored
-  if (o.subs.zzz999) fails.push("subs: a stop for an unknown sub-agent should be ignored");
+  // A stop for one never seen: a hidden tombstone (no badge, nothing counted), so a late start is no ghost.
+  await send("sub-stop-a0-zzz999"); t = render(o, ["idle", "idle"]);
+  if (!o.subs.zzz999?.tomb || badge(t) != null) fails.push(`subs: a stop for an unknown sub-agent should leave only a hidden tombstone, got ${JSON.stringify(o.subs.zzz999)} badge ${badge(t)}`);
+  await send("sub-start-a0-zzz999"); t = render(o, ["idle", "idle"]);
+  if (badge(t) != null || o.subs.zzz999?.doneAt == null) fails.push("subs: a start arriving after its stop shouldn't make a working ghost");
+  S.advance(9000);
+  if (o.subs.zzz999) fails.push("subs: a tombstone should go 8s later");
+  // Running sub-agents survive a reload, so their stop still lands.
   await send("sub-start-a0-ccc333");
-  jump(61 * MIN); S.advance(1000); t = render(o, ["idle", "idle"]);
-  if (badge(t) != null) fails.push("subs: a sub-agent never stopped should go after an hour");
+  // A stop that never comes: forgotten after 15 minutes, not an hour.
+  jump(14 * MIN); S.advance(1000); t = render(o, ["idle", "idle"]);
+  if (badge(t) == null) fails.push("subs: a running sub-agent should still show at 14 minutes");
+  jump(2 * MIN); S.advance(1000); t = render(o, ["idle", "idle"]);
+  if (badge(t) != null) fails.push("subs: a sub-agent never stopped should go after 15 minutes");
   await send("sub-start-a1-ddd444"); t = render(o, ["idle", "idle"]);
   if (ids(t).filter((x) => /^pd-/.test(x)).join(",") !== "pd-a1,pd-a0") fails.push("subs: a desk with sub-agents running counts as active (moves to the front)");
+  // (last: the new copy takes the commands) Running sub-agents survive a reload, so their stop still lands.
+  const r2 = new Office(); r2.init(world.props, makeCx());
+  if (!r2.subs.ddd444 || r2.subs.ddd444.doneAt) fails.push(`subs: a running sub-agent should survive a reload, got ${JSON.stringify(r2.subs)}`);
   noErr(t, "subs");
 
   // The hook script: sample stdin in, the command to a stand-in herdr-app out.
