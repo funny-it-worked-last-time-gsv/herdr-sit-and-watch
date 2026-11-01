@@ -182,6 +182,21 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - Only a pet sitting or with its back turned wanders; a reaction (howl, paw, eat, knock) keeps it put.
 - Dev: `wander` in the pets row, or `herdr-app do sitandwatch.wander`, sends them all off now.
 
+## The power bar
+
+- Header, between the count and OPTS: a 42x8 frame (`#2b2f3a`, 1px `#7a4a28`) with a `#ffd86a` fill in
+  20 steps (`powerShown()`).
+- `m.power` in agent-seconds, 0..1200 (`POWER_FULL`). `powerTick()` on the 1s timer: only the copy whose
+  token is the `OWNER` in localStorage counts (a stale copy after a reload would count twice), from
+  `agents()` plus background helpers (not the list on screen: the demo shows fakes). `powerStep()`:
+  +1 per working agent, -0.25 with nothing working, never below 0; at 1200 it fires the `powerUp`
+  one-shot (4 ticks, takes over) and empties, unless a ship explosion is playing: then it waits, full.
+- `powerUp`: mood `power` (first in `resolveMood`), level 3, his level-3 stand, "POWER!", never sad;
+  the pets all sit staring (just below a ship in `petPoses`).
+- Saved to localStorage (`power`, `powerAt`) on each step change; `loadPower()` ignores it after an hour.
+- Dev: `power N/1200` in the strip; the `power` fire chip (or `herdr-app do sitandwatch.fire-power`).
+  Demo: the bar follows each state's level; state 25 "Power full: POWER!".
+
 ## Desks: last-active order and cobwebs
 
 - Every poll asks `hc get` for each live agent's `status_ms`: busy ones every time, the rest once

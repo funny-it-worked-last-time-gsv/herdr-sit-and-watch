@@ -2,7 +2,7 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run } from "herdr";
 import { ink, SCREEN, r, txt, look, bot, spectator, stance, pets, explosion, DEV_W, DEV_H } from "./art.js";
-import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES, FLOORS, cobwebLevel, DESK_AGES } from "./rules.js";
+import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES, FLOORS, cobwebLevel, DESK_AGES, POWER_FULL, POWER_STEPS, powerShown } from "./rules.js";
 import { options, openOptions } from "./options.js";
 
 // ---- developer mode -------------------------------------------------------
@@ -16,7 +16,7 @@ function chip(label, on, onClick, key) {
     .on_click((_e, cx) => onClick(cx)).child(txt(label, 10, on ? ink : "#fff8e1"));
 }
 
-function devStrip(dev, mood, level, m) {
+function devStrip(dev, mood, level, m, power = 0) {
   const min = (ms) => `${Math.floor((ms ?? 0) / 60000)}m`;
   const live = Object.entries(m?.fx ?? {}).filter(([, v]) => v > 0).map(([k, v]) => `${k} ${v}`).join("  ");
   const row = (chips) => h_flex().flex_wrap().gap(3).children(chips);
@@ -24,7 +24,7 @@ function devStrip(dev, mood, level, m) {
     .child(h_flex().gap(6).child(txt(`${mood}  L${level}  ${m?.working ?? 0} working  ${m?.blocked ?? 0} blocked`, 10, "#7ee0a0"))
       .child(div().flex_1()).child(chip(dev.open ? "hide" : "buttons", false, (cx) => dev.onOpen(cx), "open")))
     .child(txt(`longest work ${min(m?.longestWorkingMs)}  blocked ${min(m?.longestBlockedMs)}  quiet ${min(m?.idleMs)}`, 10, "#9aa3b0"))
-    .child(txt(`you away ${min(m?.userIdleMs)}  seen ${m?.seen ?? 0}  ${m?.chaos ? "CHAOS" : ""}`, 10, "#9aa3b0"))
+    .child(txt(`you away ${min(m?.userIdleMs)}  seen ${m?.seen ?? 0}  power ${Math.round(power)}/${POWER_FULL}  ${m?.chaos ? "CHAOS" : ""}`, 10, "#9aa3b0"))
     .when(!!live, (e) => e.child(txt(live, 10, "#ffd86a")))
     .when(dev.open, (e) => e.child(row([txt("level", 10, "#9aa3b0"), chip("real", dev.level == null, (cx) => dev.onLevel(null, cx), "lv-real"),
       ...[0, 1, 2, 3].map((n) => chip(String(n), dev.level === n, (cx) => dev.onLevel(n, cx), `lv-${n}`))]))
@@ -145,13 +145,16 @@ export function panel(list, party = false, opts = {}) {
       .when(!!opts.toggle, (e) => e.on_click((_e, cx) => opts.toggle(cx)))
       .child(txt(opts.label ?? `${working}/${list.length} AT IT`, opts.label ? 10 : 12, "#fff8e1"))
       .child(div().flex_1())
+      // the power bar: fills with working-agent seconds, POWER! when full
+      .child(div().id("saw-power").w(42).h(8).flex_none().bg("#2b2f3a").border(1).border_color("#7a4a28")
+        .child(r(0, 0, Math.round((40 * powerShown(opts.power ?? 0)) / POWER_STEPS), 6, "#ffd86a").id("saw-power-fill")))
       // the Options dialog; its own click, so it doesn't start the demo
       .child(div().id("saw-opts").px(3).cursor_pointer()
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .on_click((_e, cx) => { cx.stop_propagation(); openOptions(); })
         .child(txt("OPTS", 10, "#dfe6f0")))
       .child(txt(opts.label ? "STOP" : "DEMO", 10, opts.label ? "#ffd86a" : "#dfe6f0")))
-    .when(!!dev, (e) => e.child(devStrip(dev, mood, level, m)))
+    .when(!!dev, (e) => e.child(devStrip(dev, mood, level, m, opts.power ?? 0)))
     .child(div().id("saw-desks").flex().flex_wrap().justify_center().content_start().flex_1().w_full().overflow_hidden().pt(6)
       .children(list.map((a) => desk(a, 0, 0, sw, rh, a.address === markAddr ? mood : null, opts.idle?.[a.address] ?? 0))))
     .child(div().flex().justify_center().w_full().h(cornerH).flex_none().bg(glow)

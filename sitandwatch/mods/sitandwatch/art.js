@@ -476,12 +476,12 @@ export function stance(level, o = {}) {
   const depth = { glazed: 1, glazedHard: 2, slumped: 3 }[mood] ?? 0, gl = depth > 0;
   // mood narrowed to the pose actually drawn
   const mode = mood === "finish" ? "pump" : mood === "blocked" && (fx.blockedPhone ?? 0) ? "phone" : gl ? "glazed" : mood;
-  const L = mode === "burst" || mode === "streak" ? 3
+  const L = mode === "burst" || mode === "streak" || mode === "power" ? 3
     : mode === "collapse" || mode === "error" || mode === "allBlocked" || mode === "longIdle" ? 0
     : gl || mode === "multiBlocked" || mode === "pointAtBlocked" || mode === "areYouSure" ? 1
     : panic ? Math.min(level, 1) : level;                // a blocked agent kills the mood
   const present = L > 0 || panic || party || ship || ["collapse", "error", "welcome", "allBlocked", "longIdle"].includes(mode) || poke > 0;
-  const sad = panic && !["collapse", "burst", "streak", "areYouSure"].includes(mode);
+  const sad = panic && !["collapse", "burst", "streak", "areYouSure", "power"].includes(mode);
   const spilled = sad || mode === "error";               // popcorn on the floor
   return { depth, gl, mode, L, present, sad, spilled };
 }
@@ -633,6 +633,7 @@ export function spectator(level, s, id, opts) {
   const levelLines = L === 0 ? ["...", "zzz", "*yawn*"] : pool(`level${L}`, seed);
   const lines = ship ? (firstShip ? ["FIRST ONE!", ...pool("ship", seed)] : pool("ship", seed))
     : poke ? [pokeLine]
+    : mode === "power" ? ["POWER!", "FULL POWER", "POWER!"]
     : mode === "streak" ? pool("streak", seed)
     : mode === "allBlocked" ? pool("meltdown", seed)
     : mode === "areYouSure" ? ["Yes"]
@@ -656,7 +657,7 @@ export function spectator(level, s, id, opts) {
     : flavour === "mixed" ? [...levelLines, "the whole team's in"]
     : levelLines;
   const period = gl || melt ? 8000 : mode === "fourthWall" || mode === "lateNight" || mode === "howMany" ? 3000
-    : L === 3 && chaos ? 500 : sad ? 1400 : party || ship || mode === "pump" ? 900 : mode === "burst" || mode === "error" || mode === "streak" ? 700
+    : L === 3 && chaos ? 500 : sad ? 1400 : party || ship || mode === "pump" ? 900 : mode === "burst" || mode === "error" || mode === "streak" || mode === "power" ? 700
     : [2400, 1600, 1400, 1000][L];
   const alarm = (sad && mode !== "pointAtBlocked") || mode === "error";
   const say = div().absolute().left(16 * s).top((-9 - up) * s).px(4).py(2).bg("#ffffff").border(2).border_color(ink)
