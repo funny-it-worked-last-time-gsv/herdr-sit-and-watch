@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """PostToolUse hook (Bash): when a command actually ships something, set off the
 Sit & Watch explosion in the Herdr app. Never blocks or fails the tool call."""
+from __future__ import annotations  # `str | None` annotations on Python 3.9
+
 import json
 import re
 import shutil
