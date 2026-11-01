@@ -7,7 +7,7 @@ import { LINES } from "./lines.js";
 import { panel } from "./panel.js";
 import { spaceLabel, tabLabel, tabName } from "./names.js";
 import { spaceName, tabText } from "./privacy.js";
-import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, shouldClearMin, MIN_GUARD_MS, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting } from "./rules.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, shouldClearMin, MIN_GUARD_MS, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -150,6 +150,7 @@ export default class Office extends View {
           const key = JSON.stringify(next);
           const partyOver = this.partyUntil && Date.now() > this.partyUntil;
           if (partyOver) this.partyUntil = 0;
+          this.polled = true;
           if (key !== this.helpersKey || partyOver) { this.helpersKey = key; this.helpers = next; cx.notify(); }
         } catch {}
       });
@@ -192,7 +193,9 @@ export default class Office extends View {
       // Claude Code sub-agents, from the hook: { [agent id]: { parent, at, doneAt } }
       this.subs = {};
       // minimised: { id, axis, saved (the size to restore), at, seen (what layout() said after) }, per copy
-      this.min = (() => { try { return JSON.parse(localStorage.getItem("min") ?? "null"); } catch { return null; } })();
+      const savedMin = (() => { try { return JSON.parse(localStorage.getItem("min") ?? "null"); } catch { return null; } })();
+      this.min = keepMin(savedMin, (() => { try { return findBlock(layout()); } catch { return null; } })());
+      if (savedMin && !this.min) try { localStorage.removeItem("min"); } catch {}
       // developer mode's pins; whether it's on is an option (shared, so the Options dialog sees it)
       this.dev = { mood: null, level: null };
       // A reload or a rebuilt view leaves the old loop below waiting too, and its cx keeps working,
@@ -207,6 +210,8 @@ export default class Office extends View {
           let mine = false;
           try { mine = localStorage.getItem(OWNER) === token; cx.notify(); } catch { mine = false; }
           if (!mine) { try { run(`sitandwatch.${c}`); } catch {} return; }
+          // One bad command never ends the loop: the hook's events and every later command still land.
+          try {
           if (c === "demo") { this.toggleDemo(); cx.notify(); }
           // demo-<n>: the demo at state n (1-based), e.g. for recording one state
           const dn = /^demo-(\d+)$/.exec(c);
@@ -230,6 +235,7 @@ export default class Office extends View {
           if (c.startsWith("level-")) { const v = c.slice(6); this.dev.level = v === "real" ? null : Number(v); cx.notify(); }
           // pets-<scene|auto>: force the pets into a scene (see PET_SCENES in rules.js)
           if (c.startsWith("pets-")) { const v = c.slice(5); this.dev.pets = v === "auto" ? null : v; cx.notify(); }
+          } catch (e) { console.log("sitandwatch: command failed:", c, e?.message ?? e); }
         }
       });
     }
@@ -394,7 +400,7 @@ export default class Office extends View {
       cx.timer.after(15000, (cx) => this.subEvent({ verb: "stop", parent, id }, cx));
       return;
     }
-    if (CHIP_KEY[ev]) startOneShot(m, CHIP_KEY[ev]);
+    if (Object.hasOwn(CHIP_KEY, ev)) startOneShot(m, CHIP_KEY[ev]);   // own keys only: fire-toString is no event
     if (ev === "finish") this.partyUntil = Date.now() + 3000;
     if (ev === "streak") m.streakAddr = first;
     if (ev === "welcome") m.welcomeAddr = first;
@@ -448,7 +454,7 @@ export default class Office extends View {
       if (fresh) { startOneShot(m, "newAgentWelcome"); m.welcomeAddr = fresh.address; }
     }
     m.prevAddrs = new Set(list.map((a) => a.address));
-    for (const a of list) m.seen.add(a.address);
+    for (const a of list) if (!a.sub) m.seen.add(a.address);   // sub-agents aren't more agents seen ("how many?")
     // Switching agents counts as the user being around (header clicks count too).
     const focus = list.find((a) => a.focused)?.address ?? null;
     if (focus !== m.lastFocus) { m.lastFocus = focus; m.lastUser = now; }
@@ -748,7 +754,7 @@ export default class Office extends View {
       const statusAt = (a) => (this.m.hcSince[a.address]?.status === a.status ? this.m.hcSince[a.address].at : null) ?? this.m.local[a.address]?.at ?? now;
       // Finished and not answered yet, looked at or not: since when (kept across restarts).
       this.waiting ??= (() => { try { return JSON.parse(localStorage.getItem("waiting") ?? "{}") ?? {}; } catch { return {}; } })();
-      const waiting = trackWaiting(this.waiting, list, statusAt);
+      const waiting = trackWaiting(this.waiting, list, statusAt, !this.polled);   // helpers come with the first poll
       if (JSON.stringify(waiting) !== JSON.stringify(this.waiting)) { this.waiting = waiting; try { localStorage.setItem("waiting", JSON.stringify(waiting)); } catch {} }
       list = list.map((a) => (waiting[a.address] != null ? { ...a, waiting: true } : a));
       for (const a of list) {
