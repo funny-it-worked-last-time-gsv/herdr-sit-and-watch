@@ -1365,6 +1365,63 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (Object.keys(e.subs).length) fails.push("subs: the dev chip with no desks should do nothing");
 }
 
+// ---- height: heightTick's wiring (minimised, "layout", a restart) and late refusals -------------
+{
+  // Value: protects=heightTick() feeding planHeight the live state: nothing resized while minimised (a new choice must not
+  //   blow the strip open), `height-layout` handing the old size back and forgetting the saved height, and a restart (a
+  //   new copy's first tick, block back at its old size) setting the chosen height again; fails_when=minimised stops being
+  //   passed (!!this.min), the "layout" word stops being accepted, or `first` is never true; why_new=the height block
+  //   proves those rules in planHeight() alone, and through main.js only a new choice, a typo, a sync refusal and a row;
+  //   seam=none; no_claim=Herdr keeping px across a real restart
+  await S.settle(); S.dropCommandWaiters();
+  const { o } = mount();
+  const lay = (px) => ({ id: "root", type: "row", children: [{ id: "sidebar", type: "column", children: [{ id: "sitandwatch", type: "block", content: { mod: "sitandwatch" }, size: { px } }] }] });
+  const send = async (c) => { S.sendCommand(c); await S.settle(); await S.settle(); };
+  const sized = () => world.runs.filter(([n]) => n === "layout.resize").map(([, a]) => JSON.stringify(a));
+  world.layout = lay(300); render(o, ["idle"]);
+  await send("height-400"); S.advance(1000); world.layout = lay(400);
+  // Minimised: a new choice waits, the strip stays a strip.
+  o.setMin({ id: "sitandwatch", axis: "column", saved: { px: 400 }, at: clock.now, seen: 30 }); world.layout = lay(30);
+  world.runs = []; await send("height-500"); S.advance(3000);
+  if (sized().length) fails.push(`height: a new height while minimised should wait, got ${sized()}`);
+  await send("height-400"); o.setMin(null); try { localStorage.removeItem("min"); } catch {}
+  world.layout = lay(400); S.advance(1000);
+  // "layout": back to the size from before, nothing remembered.
+  world.runs = []; await send("height-layout"); S.advance(1000);
+  let kept = "x"; try { kept = localStorage.getItem("height"); } catch {}
+  if (JSON.stringify(sized()) !== '["{\\"id\\":\\"sitandwatch\\",\\"px\\":300}"]' || kept != null || OPT.options().height != null) fails.push(`height: height-layout should hand back 300 and forget, got ${sized()} saved=${kept} option=${OPT.options().height}`);
+  // A restart: the chosen 400 is remembered, Herdr put the block back to 300; the new copy's first tick sets it again.
+  world.layout = lay(300); await send("height-400"); S.advance(1000);
+  world.layout = lay(400); S.advance(1000); world.layout = lay(300); world.runs = [];
+  const o2 = new Office(); o2.init(world.props, makeCx()); S.advance(1000);
+  if (JSON.stringify(sized()) !== '["{\\"id\\":\\"sitandwatch\\",\\"px\\":400}"]') fails.push(`height: after a restart the chosen height should be set again, got ${sized()}`);
+  world.layout = null; world.runs = [];
+}
+{
+  // Value: protects=heightTick() treating a later refusal like a sync one: a promise that rejects, one that resolves to
+  //   { error }, and a throw each toast "Herdr refused to set my height" once and forget the new height so it's retried in 30s;
+  //   fails_when=the .then handlers or the catch stop calling refused() (silent failure, never retried); why_new=the height
+  //   block only refuses with a synchronous { error }; seam=none (world.runResult exists); no_claim=whether Herdr's real
+  //   layout.resize returns a promise
+  await S.settle(); S.dropCommandWaiters();
+  const { o } = mount();
+  const lay = { id: "root", type: "row", children: [{ id: "sidebar", type: "column", children: [{ id: "sitandwatch", type: "block", content: { mod: "sitandwatch" }, size: { px: 300 } }] }] };
+  const send = async (c) => { S.sendCommand(c); await S.settle(); await S.settle(); };
+  world.layout = lay; render(o, ["idle"]);
+  const refusals = (why) => world.notes.filter((n) => n.body === `Herdr refused to set my height: ${why}`).length;
+  const cases = [["400", () => Promise.reject(new Error("later"))], ["500", () => Promise.resolve({ error: "full" })], ["240", () => { throw new Error("boom"); }]];
+  for (const [h, result] of cases) {
+    world.notes = []; world.runs = []; world.runResult = result;
+    await send(`height-${h}`); S.advance(1000); await S.settle(); await S.settle(); S.advance(5000);
+    const why = { 400: "later", 500: "full", 240: "boom" }[h];
+    let saved = null; try { saved = JSON.parse(localStorage.getItem("height") ?? "null"); } catch {}
+    if (refusals(why) !== 1 || saved?.h === +h) fails.push(`height: a ${why} refusal should toast once and forget the height, toasts ${refusals(why)} saved=${JSON.stringify(saved)}`);
+    world.runResult = null; world.runs = []; S.advance(30000);
+    if (!world.runs.some(([n, a]) => n === "layout.resize" && a.px === +h)) fails.push(`height: after a ${why} refusal ${h} should be retried in 30s`);
+  }
+  world.layout = null; world.runs = [];
+}
+
 const budget = g.budget.max + BUDGET_HEADROOM, over = snap.demo.counts.map((n, i) => [i + 1, n]).filter(([, n]) => n > budget);
 for (const [i, n] of over) fails.push(`demo state ${i}: ${n} elements, budget ${budget}`);
 
