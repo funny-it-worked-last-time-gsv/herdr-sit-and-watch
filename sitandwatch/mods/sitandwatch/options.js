@@ -10,7 +10,7 @@ import { FLOORS, HEIGHTS, readOptions } from "./rules.js";
 export const OPTIONS_KEY = "sitandwatch.options";
 export const options = () => readOptions(shared(OPTIONS_KEY));
 export function setOption(change) { setShared(OPTIONS_KEY, { ...options(), ...change }); }
-export const openOptions = () => openOverlay({ mod: "sitandwatch", kind: "dialog", width: 380, height: 540, props: { options: true } });
+export const openOptions = () => openOverlay({ mod: "sitandwatch", kind: "dialog", width: 380, height: 610, props: { options: true } });
 
 const PANEL = "#2b2f3a", LABEL = "#9aa3b0", TEXT = "#fff8e1";
 
@@ -42,6 +42,7 @@ export function optionsDialog(handle) {
     .child(section("Pets", "Who lives in the corner (their coats: PETS in art.js).",
       PETS.map((p) => pill(`pet-${p.name}`, p.name, o.pets[p.name], () => setOption({ pets: { ...o.pets, [p.name]: !o.pets[p.name] } })))))
     .child(section("Speech bubbles", "What he says. Off: he still reacts, silently.", onOff("speech", "speech", o.speech)))
+    .child(section("Activity bubbles", "Desks say what each session is doing. Off: their task titles instead.", onOff("activity", "activity", o.activity)))
     .child(section("Chaos mode", "Lingering confetti and faster everything, for good.", onOff("chaos", "chaos", o.chaos)))
     .child(section("Developer mode", "The strip of numbers and buttons under the header.", onOff("dev", "dev", o.dev)))
     .child(div().flex_1())

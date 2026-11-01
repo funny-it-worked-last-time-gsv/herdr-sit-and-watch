@@ -88,6 +88,8 @@ Click **OPTS** in the panel's header, or run `herdr-app do sitandwatch.options`,
 - **Pets:** switch Buddy, Snowy or Simba off. Recolour their coats in the `PETS` table in
   `art.js` (the names double as ids, so a rename needs a code change).
 - **Speech bubbles:** off and he still reacts, silently.
+- **Activity bubbles:** off and the desks show their task titles, not what each session is doing
+  right now. The activity hook then sends nothing. Also `herdr-app do sitandwatch.activity`.
 - **Chaos mode** and **developer mode**, the same as their commands below.
 
 Choices are kept in Herdr's shared state, so they survive restarts.
@@ -148,7 +150,7 @@ Three optional Claude Code hooks live in `sitandwatch/hooks/`:
   ```json
   "PreToolUse": [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/sitandwatch-activity.py", "async": true, "timeout": 10 }] }]
   ```
-  Before each tool call it sends a short phrase (`Editing main.js`, `Running npm test`, `Searching
+  Before each tool call it sends a short phrase (`Edit main.js`, `Run npm test`, `Grep
   useAuth`: a file's name, never its path or contents; a command's program and subcommand only, like `npm test`) as
   `herdr-app do sitandwatch.act-<terminal>-<base64url>`. One quick `herdr-app` run per tool call, in
   the background; it never blocks or fails Claude Code.
@@ -157,6 +159,38 @@ Delete the folder and that block to remove it (restore it first if minimised). I
 `hc ls` and `hc get` (to see background agents, crashes and how long each agent has been busy) and
 reads no files outside its folder (it reads screenshot mode's choices from Herdr's shared state). Nothing animates while
 nothing is happening.
+
+## History
+
+Built over two days, mostly by Claude Code sessions working from short specs, each change checked
+against screenshots of the live panel.
+
+**31 October 2026**
+
+- **First version.** Robots at desks, the developer in the armchair getting more excited the more
+  agents work, a party popper when one finishes, a tear when one needs you. Built on
+  zuccs/herdr-office-layout.
+- **The ship explosion** ([#1](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/1)). A fireball when a Claude Code session runs `git push`,
+  `gh pr merge` or a production `vercel` deploy, sent by a Claude Code hook.
+- **Moods** ([#2](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/2), [#3](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/3)). One dominant mood from what the agents are really doing: how
+  long they've run (real times from herdr-core), crashes, bursts of finishes, blocked agents, late
+  nights. The demo became the GIF at the top.
+- **More personality, and developer mode** ([#4](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/4)). Pools of lines, the meltdown, dozing,
+  streaks, chaos mode, "Are you sure?" "Yes", and a strip for forcing any state while testing.
+
+**1 November 2026**
+
+- **Pets and the rest** ([#5](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/5), [#6](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/6)). Renamed Sit & Watch. Buddy, Snowy and Simba with
+  their own reactions, the Options dialog and floors, minimise, the power bar, cobwebs on old desks,
+  how long a finished agent has waited, sub-agent counts, a height adjuster, and offline checks with
+  a snapshot of every mood decision.
+- **A day at the desks** ([#7](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/7)). The demo tells a story, busy desks show a log, and the
+  activity hook makes each desk say what its session is doing right now.
+- **Hook fixes** ([#8](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/8), [#9](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/9)). The ship hook judges each part of a compound command,
+  and all three hooks load on Python 3.9.
+- **Quieter, safer activity bubbles** ([#10](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/10)). Repeats are skipped in the hook and the panel,
+  secret-shaped words show as `***`, phrases fit the 20 characters a bubble shows (`Edit main.js`,
+  `Run git push`, `> Review the diff`), and Options can turn the bubbles off.
 
 ## Credits
 
