@@ -20,8 +20,8 @@ flex column, top to bottom, on the floor colour from Options (`FLOORS` in `rules
    42×8 power bar (`#2b2f3a`, 1px `#7a4a28` frame, `#ffd86a` fill), `OPTS`, `DEMO` (10px, `#dfe6f0`)
    and `_` (minimise). In the demo it grows to 30px, turns `#6b3f1f` and reads
    `DEMO i/27  <state>` (10px) with `STOP` in `#ffd86a`. Developer mode adds its strip below.
-2. **Desks**, filling the remaining height, `overflow_hidden`, 6px top padding: one 84×56 tile per
-   agent in a centred wrapping row (84×68), in last-active order. A tile holds a 32×20 `#2b2f3a`
+2. **Desks**, filling the remaining height, `overflow_hidden`, 6px top padding: one 84×68 tile per
+   agent (68px tall to fit its name) in a centred wrapping row, in last-active order. A tile holds a 32×20 `#2b2f3a`
    monitor (28×16 screen), a 6×3 stand, a 52px desk (`#f0dcb0` top 6px, `#d4b27c` front 4px, one
    element) and a robot at scale 1.5 seen from behind, with its name under the chair (10px,
    `deskName()`). On top, when they apply: the waiting time on a finished agent's screen (`12m`),
@@ -79,8 +79,9 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 
 | Mood | When | He does | Says |
 | --- | --- | --- | --- |
-| `streak` | the same agent's 3rd finish within 10 min (4 ticks) | level 3 pose, extra confetti, gold arrow at that desk | streak pool |
+| `power` | the power bar filled (`powerUp`, 4 ticks; see The power bar) | level 3 stand, never sad, the pets all staring | `POWER!`, `FULL POWER` |
 | `burst` | 3 finishes within 60s (6 ticks) | level 3 pose, both arms pumping at 150ms, 14 more confetti | `they're flying!`, `yes lads` |
+| `streak` | the same agent's 3rd finish within 10 min (4 ticks) | level 3 pose, extra confetti, gold arrow at that desk | streak pool |
 | `error` | an agent we showed exited with code > 0 (4 ticks) | hands on head, eyes squeezed, grimace, sweat, popcorn spilled, small shake | `oh no`, `that's not good` |
 | `collapse` | 2+ working dropped to none (5 ticks) | see below | `ahh`, `job done` |
 | `finish` | working to done (3 ticks) | the fist pump below | `GET IN!` |
@@ -98,10 +99,10 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 | `normal` | otherwise | level pose | level lines |
 
 - **Lines** live in `lines.js`, one pool per state (levels 1 to 3, finish, blocked, ship, streak,
-  meltdown, idle, poke). `pool(name, seed)` shuffles a pool with the session's seed and puts the
+  meltdown, idle, poke; and the pets' `cat`, `beagle`, `asleep`). `pool(name, seed)` shuffles a pool with the session's seed and puts the
   original line first, and `frames()` cycles it natively. The pixel font has no curly quotes.
 - **Chaos** at level 3 when 6+ are working, or always after `herdr-app do sitandwatch.chaos`
-  (remembered in `localStorage`): 12 more confetti at 1.8× the period, lines every 500ms, a bigger
+  (an option, kept in Herdr's shared state; see Options): 12 more confetti at 1.8× the period, lines every 500ms, a bigger
   head throw.
 - **Can** on the right armrest from level 2. **Tint**: the scarf and foam finger stripe move 35%
   toward the shirt colour of whoever has the most working agents.
@@ -163,7 +164,8 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - `mods/sitandwatch/panel.js`: the panel (`panel(list, party, opts)`), desks, the dev strip, the strip and rail.
 - `mods/sitandwatch/rules.js`: every decision, no imports: `devLevel`, `resolveMood`, `effectiveMood`, the
   `ONE_SHOT` table and `startOneShot`, `petPoses`, options, the power meter, desk order and cobwebs,
-  `findBlock` for minimise, the can and the popcorn.
+  `findBlock` for minimise, `planHeight` for the height option, the waiting times (`trackWaiting`), the
+  sub-agents (`parseSubCommand`, `pruneSubs`, `subDesks`, `foldSubs`), the can and the popcorn.
 - `mods/sitandwatch/options.js`: the Options dialog.
 - `mods/sitandwatch/lines.js`: what he and the pets say, `pool()` and `pickLine()`.
 - `mods/sitandwatch/names.js` and `privacy.js`: every drawn name, through screenshot mode's renames.
@@ -180,7 +182,8 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - Commands through `nextCommand()`: `demo`, `demo-<n>`, `dev`, `chaos`, `options`, `min`, `wander`,
   `ship` and `ship-<kind>`, `fire-<event>`, `mood-<name|auto>`, `level-<n|real>`, `pets-<scene|auto>`,
   `desks-<1h|8h|real>`, `height-<px|layout>`, and `sub-start-<terminal>-<id>` / `sub-stop-...` from the sub-agent hook. Calls `agents()`,
-  `hc` (`ls`, `get`), `run("agent.focus")`.
+  `hc` (`ls`, `get`), `run("agent.focus")`, `layout()` and `run("layout.resize")` (minimise and height),
+  `notify()`, and `shared`/`setShared`/`openOverlay` for Options.
   No network, no `exec`, no files outside its folder.
 - Based on [zuccs/herdr-office-layout](https://github.com/zuccs/herdr-office-layout) (MIT): its
   `art.js` helpers, palette, font and office view.
@@ -193,7 +196,7 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   look like your own pets; the names are also ids (Options, `petPoses`, `HOME`/`EXIT`), so a rename touches all of them.
 - Drawn as rows of palette letters (`POSE` in `art.js`) at the corner's scale 3, packed by
   `blocks()`/`pack()` into a few layered rectangles (cached), so a pet costs a handful of divs.
-  Cat: `sit` and `back` 9×12, `curl` 12×6 (knocks use `sit` raised onto the armrest or chair back).
+  Cat: `sit` 10×12 and `back` 11×12 (the tail sticks out past the 9-wide body), `curl` 12×6 (knocks use `sit` raised onto the armrest or chair back).
   Beagle: `sit`, `paw`, `howl` 12×13, `eat` 14×6, `curl` 16×6. Curled and eating pets get a 1px
   outline so they read against the chair and the floor.
 - Placement (`HOME`): Buddy at -44, Snowy at 100, Simba at 132 (x from the chair's left), feet on
@@ -385,7 +388,8 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   they restart at the new speed when it changes.
 - `herdr-app check` renders the default role, the panel, with no agents: it can't show levels 1–3.
   Use the demo.
-- Claude Code's own subagents (its Agent tool) run inside one terminal, so they don't get desks.
+- Claude Code's own subagents (its Agent tool) run inside one terminal, so they don't get desks;
+  with the sub-agent hook they show as a `2/5` tag on their session's desk instead.
 - More than about two rows of desks are hidden behind the corner in a short panel.
 
 ## Done when
