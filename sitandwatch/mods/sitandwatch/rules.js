@@ -163,7 +163,8 @@ export const DESK_AGES = { "1h": COBWEB_MS[0], "8h": COBWEB_MS[1] };
 export const POWER_FULL = 1200, POWER_STEPS = 20, POWER_DRAIN = 0.25, POWER_KEEP_MS = 60 * MIN;
 export function powerStep(power, working, hold = false) {
   let p = Number.isFinite(power) ? power : 0;
-  if (hold && p >= POWER_FULL) return { power: POWER_FULL, fire: false };   // held full: no drain while it waits
+  // Full already: held while a ship plays (no drain), then fires as soon as the hold ends, working or not.
+  if (p >= POWER_FULL) return hold ? { power: POWER_FULL, fire: false } : { power: 0, fire: true };
   p = working > 0 ? p + working : Math.max(0, p - POWER_DRAIN);
   if (p < POWER_FULL) return { power: p, fire: false };
   return hold ? { power: POWER_FULL, fire: false } : { power: 0, fire: true };
@@ -203,8 +204,12 @@ export function findBlock(tree) {
 export const shouldClearMin = (sizePx, minAt, now) => now - minAt > MIN_GUARD_MS && Number.isFinite(sizePx) && sizePx >= MIN_OPEN;
 // A saved strip only comes back where it belongs: the same block on the same axis, still strip-sized
 // (another layout reusing the id, or a Herdr restart that put the block back to full size, drop it).
+// Forgotten only on positive evidence: a different block or axis, or a px size that's open; with no
+// readable layout or no px size it's kept, and minCheck clears it later if the block reads open.
 export function keepMin(min, b) {
-  return min && b?.ok && b.id === min.id && b.axis === min.axis && Number.isFinite(b.size?.px) && b.size.px < MIN_OPEN ? min : null;
+  if (!min || !b?.ok) return min ?? null;
+  if (b.id !== min.id || b.axis !== min.axis) return null;
+  return Number.isFinite(b.size?.px) && b.size.px >= MIN_OPEN ? null : min;
 }
 // The toasts for each reason minimising can't happen.
 export const MIN_TROUBLE = {
