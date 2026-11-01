@@ -28,7 +28,7 @@ export const ONE_SHOT = {
 export const ONE_SHOTS = Object.keys(ONE_SHOT);
 export const TAKES_OVER = ONE_SHOTS.filter((k) => ONE_SHOT[k].takesOver);
 // Dev "fire" buttons: every one-shot, then the events that aren't one-shots.
-export const DEV_FIRE = [...ONE_SHOTS.map((k) => ONE_SHOT[k].chip), "chaos", "pushed", "merged", "deployed", "canKnock"];
+export const DEV_FIRE = [...ONE_SHOTS.map((k) => ONE_SHOT[k].chip), "chaos", "pushed", "merged", "deployed", "canKnock", "subagent"];
 export const CHIP_KEY = Object.fromEntries(ONE_SHOTS.map((k) => [ONE_SHOT[k].chip, k]));
 
 // Start a one-shot. Every start goes through here; a trigger that lasts a different time from
@@ -37,9 +37,14 @@ export function startOneShot(m, key, ticks = ONE_SHOT[key].ticks) { m[key] = tic
 
 // ---- level and mood -------------------------------------------------------------
 // How worked up he is: 0 nobody working, 1 one, 2 two or three, 3 four or more (or all of them).
+// Working agents and all agents, counting a desk's running sub-agents (a.subs, from foldSubs) as more of each.
+export function headcount(list) {
+  const extra = list.reduce((n, a) => n + (a.subs?.running ?? 0), 0);
+  return { working: list.filter((a) => a.status === "working").length + extra, total: list.length + extra };
+}
 export function devLevel(list) {
-  const working = list.filter((a) => a.status === "working").length;
-  return !working ? 0 : working >= 4 || (working === list.length && working >= 2) ? 3 : working >= 2 ? 2 : 1;
+  const { working, total } = headcount(list);
+  return !working ? 0 : working >= 4 || (working === total && working >= 2) ? 3 : working >= 2 ? 2 : 1;
 }
 
 export const isNight = (h) => h >= 22 || h < 6;
@@ -212,6 +217,17 @@ export const canKnock = (longestWorkingMs, level) => longestWorkingMs > KNOCK_AF
 // Spilled popcorn shrinks while Buddy eats it: 2 full (under 30s), 1 half (under 60s), 0 crumbs.
 export const pileSize = (ticks) => (ticks < 30 ? 2 : ticks < 60 ? 1 : 0);
 // How long a finished agent has waited for you, on its desk: "<1m", "12m", "3h", "2d".
+// Agents waiting on you: { [address]: when it finished }. Set when one goes done, kept while it's
+// done or idle (Herdr turns done into idle as soon as you look, but you haven't answered yet),
+// cleared once it works or asks again, or leaves. atOf(a): when it entered done. Returns the new map.
+export function trackWaiting(waiting, list, atOf) {
+  const out = {};
+  for (const a of list) {
+    if (a.status === "done") out[a.address] = waiting[a.address] ?? atOf(a);
+    else if (a.status === "idle" && waiting[a.address] != null) out[a.address] = waiting[a.address];
+  }
+  return out;
+}
 export function sinceLabel(ms) {
   const m = Math.floor(Math.max(0, ms) / MIN);
   if (m < 1) return "<1m";
@@ -219,3 +235,48 @@ export function sinceLabel(ms) {
   const h = Math.floor(m / 60);
   return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
 }
+
+// ---- Claude Code sub-agents (the Agent tool) ----------------------------------------
+// They run inside their session, not as Herdr terminals, so a Claude Code hook tells the panel
+// (sitandwatch/hooks/sitandwatch-subagents.py): sub-start / sub-stop with the session's terminal and the
+// sub-agent's id. subs: { [id]: { parent, at, doneAt } }. Each gets a desk after its parent's, working
+// until it stops, done for a few seconds after (the finish), then gone; one never stopped goes after an hour.
+export const SUB_DONE_MS = 8000, SUB_TTL_MS = 60 * MIN;
+export function parseSubCommand(c) {
+  const m = /^sub-(start|stop)-([A-Za-z0-9]+)-([A-Za-z0-9]+)$/.exec(c ?? "");
+  return m ? { verb: m[1], parent: m[2], id: m[3] } : null;
+}
+// A parent's sub-agents are one batch: kept while any is running, then all dropped SUB_DONE_MS after
+// the last one stopped (so the badge counts up to 5/5 before it goes). One never stopped is dropped
+// after SUB_TTL_MS. Returns the kept subs.
+export function pruneSubs(subs, now) {
+  const live = (s) => !s.doneAt && now - s.at < SUB_TTL_MS, batch = {};
+  for (const s of Object.values(subs)) {
+    const b = (batch[s.parent] ??= { running: false, last: 0 });
+    if (live(s)) b.running = true;
+    if (s.doneAt) b.last = Math.max(b.last, s.doneAt);
+  }
+  return Object.fromEntries(Object.entries(subs).filter(([, s]) => (s.doneAt ? batch[s.parent].running || now - batch[s.parent].last < SUB_DONE_MS : live(s))));
+}
+// The sub-agents as agents (working, or done once stopped), so the welcome, the finish, the power bar
+// and his metrics see them like any agent. Their address is `<parent>~<id>`; foldSubs puts them back.
+export function subDesks(subs, list) {
+  return Object.entries(subs).map(([id, s]) => {
+    const parent = list.find((a) => a.address === s.parent);
+    return { address: `${s.parent}~${id.slice(0, 8)}`, status: s.doneAt ? "done" : "working", parent: s.parent, sub: true,
+      tab_name: parent?.tab_name ?? "sub", app: parent?.app ?? null, program: parent?.program ?? null, focused: false };
+  });
+}
+// For drawing: no desk of their own. Each parent's desk gets subs: { done, total, running } (the 2/5
+// badge); sub-agents whose parent has no desk are left out.
+export function foldSubs(list) {
+  const subs = list.filter((a) => a.sub);
+  return list.filter((a) => !a.sub).map((a) => {
+    const mine = subs.filter((s) => s.parent === a.address);
+    if (!mine.length) return a;
+    const done = mine.filter((s) => s.status === "done").length;
+    return { ...a, subs: { done, total: mine.length, running: mine.length - done } };
+  });
+}
+// A desk address for a mark: a sub-agent's is its parent's.
+export const deskOf = (addr) => (addr == null ? addr : String(addr).split("~")[0]);

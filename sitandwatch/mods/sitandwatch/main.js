@@ -5,7 +5,9 @@ import { options, setOption, optionsDialog, openOptions } from "./options.js";
 import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H, PETS, WALK_MS } from "./art.js";
 import { LINES } from "./lines.js";
 import { panel } from "./panel.js";
-import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, shouldClearMin, MIN_GUARD_MS, MIN_TROUBLE, canKnock, pileSize } from "./rules.js";
+import { spaceLabel, tabLabel, tabName } from "./names.js";
+import { spaceName, tabText } from "./privacy.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, shouldClearMin, MIN_GUARD_MS, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -55,6 +57,8 @@ const DEMO_STATES = [
   // desks idle 2h (a cobweb) and 10h (covered); the 7th element is the ms each desk has been idle
   ["Power full: POWER!", ["working", "working", "working", "working", "idle", "idle"], false, false, (t) => ({ fx: { powerUp: left(4, t) } })],
   ["Old agents: cobwebs", ["working", "done", "idle", "idle", "idle", "idle"], false, false, null, [0, 30 * MIN, 2 * 60 * MIN, 2 * 60 * MIN, 10 * 60 * MIN, 10 * 60 * MIN]],
+  // the 8th element: sub-agents on a desk, { desk index: [done, total] }
+  ["Sub-agents: 2/5 on one desk", ["working", "idle", "idle", "done", "idle", "idle"], false, false, null, [0, 0, 0, 4 * MIN, 0, 0], { 0: [2, 5] }],
 ];
 const OWNER = "commands-owner"; // localStorage key: which panel build takes commands
 const BANNERS = { merged: "PR MERGED", deployed: "DEPLOYED", pushed: "IT'S LIVE" };
@@ -177,12 +181,16 @@ export default class Office extends View {
         this.minBusy = false;
         if (this.minCheck()) changed = true;
         if (this.knockTick(cx)) changed = true;
+        const kept = pruneSubs(this.subs, Date.now());       // finished sub-agents leave, forgotten ones too
+        if (Object.keys(kept).length !== Object.keys(this.subs).length) { this.subs = kept; changed = true; }
         if (this.demoAt != null || partyOver || changed || ++ticks % 15 === 0) cx.notify();
       });
       // `herdr-app do sitandwatch.ship` (sent by the Claude Code hook after a push) sets off the explosion:
       // stage 0 draws it squashed, stage 1 a moment later lets transition() blow it out, then it clears.
       this.ship = null;
       // developer mode: `herdr-app do sitandwatch.dev`, remembered across restarts
+      // Claude Code sub-agents, from the hook: { [agent id]: { parent, at, doneAt } }
+      this.subs = {};
       // minimised: { id, axis, saved (the size to restore), at, seen (what layout() said after) }, per copy
       this.min = (() => { try { return JSON.parse(localStorage.getItem("min") ?? "null"); } catch { return null; } })();
       // developer mode's pins; whether it's on is an option (shared, so the Options dialog sees it)
@@ -200,12 +208,18 @@ export default class Office extends View {
           try { mine = localStorage.getItem(OWNER) === token; cx.notify(); } catch { mine = false; }
           if (!mine) { try { run(`sitandwatch.${c}`); } catch {} return; }
           if (c === "demo") { this.toggleDemo(); cx.notify(); }
+          // demo-<n>: the demo at state n (1-based), e.g. for recording one state
+          const dn = /^demo-(\d+)$/.exec(c);
+          if (dn && +dn[1] >= 1 && +dn[1] <= DEMO_STATES.length) { this.demoAt = Date.now() - (+dn[1] - 1) * DEMO_MS; cx.notify(); }
           if (c === "dev") { this.dev = { mood: null, level: null }; setOption({ dev: !options().dev }); cx.notify(); }
           // `herdr-app do sitandwatch.chaos` turns chaos mode on for good (or off again)
           if (c === "chaos") { setOption({ chaos: !options().chaos }); cx.notify(); }
           if (c === "options") openOptions();
           if (c === "wander") this.wanderTick(cx, true);
           if (c === "min") this.minimise(cx);
+          // sub-start-<terminal>-<id> / sub-stop-...: a Claude Code sub-agent (the subagents hook)
+          const sub = parseSubCommand(c);
+          if (sub) this.subEvent(sub, cx);
           // desks-<1h|8h|real>: pretend every desk not busy has been idle that long (cobwebs)
           if (c.startsWith("desks-")) { const v = c.slice(6); this.dev.desks = DESK_AGES[v] ? v : null; cx.notify(); }
           // ship, ship-merged, ship-deployed: the hook says what shipped, for the banner
@@ -290,6 +304,15 @@ export default class Office extends View {
     return changed || pileSize(m.spillTicks) !== before;
   }
 
+  // A sub-agent started or stopped. A stop for one never seen is ignored; a start for one already
+  // running just keeps it.
+  subEvent({ verb, parent, id }, cx) {
+    const now = Date.now();
+    if (verb === "start") this.subs[id] ??= { parent, at: now };
+    else if (this.subs[id] && !this.subs[id].doneAt) this.subs[id].doneAt = now;
+    cx.notify();
+  }
+
   // A pet was clicked (or the dev petPoke fired): its bubble for two ticks, a line from its pool
   // ("asleep" while it's curled on the chair).
   pokePet(name, cx) {
@@ -307,7 +330,8 @@ export default class Office extends View {
   // Returns whether the drawn bar changed.
   powerTick(token) {
     try { if (localStorage.getItem(OWNER) !== token) return false; } catch { return false; }
-    const seen = new Set(), live = [...agents(), ...(this.helpers ?? [])].filter((a) => !seen.has(a.address) && seen.add(a.address));
+    const seen = new Set(), base = [...agents(), ...(this.helpers ?? [])].filter((a) => !seen.has(a.address) && seen.add(a.address));
+    const live = [...base, ...subDesks(this.subs ?? {}, base)];
     const working = live.filter((a) => a.status === "working").length;
     const before = powerShown(this.m.power);
     const { power, fire } = powerStep(this.m.power, working, this.ship != null);
@@ -362,6 +386,14 @@ export default class Office extends View {
     const m = this.m, first = this.list[0]?.address ?? null;
     if (ev === "petPoke") return this.pokePet(null, cx);
     if (ev === "canKnock") { m.knockUntil = Date.now() + 20000; cx.notify(); return; }
+    if (ev === "subagent") {                                 // a pretend sub-agent on the first desk, for 15s
+      const parent = this.list.find((a) => !a.sub)?.address;
+      if (!parent) return;
+      const id = `dev${Date.now() % 100000}`;
+      this.subEvent({ verb: "start", parent, id }, cx);
+      cx.timer.after(15000, (cx) => this.subEvent({ verb: "stop", parent, id }, cx));
+      return;
+    }
     if (CHIP_KEY[ev]) startOneShot(m, CHIP_KEY[ev]);
     if (ev === "finish") this.partyUntil = Date.now() + 3000;
     if (ev === "streak") m.streakAddr = first;
@@ -591,7 +623,7 @@ export default class Office extends View {
   label(a, x, y, k) {
     const q = (v) => Math.round(v * k);
     return h_flex().absolute().left(x).top(y + q(130)).w(q(SLOT_W)).justify_center().gap(q(6)).items_center()
-      .child(icon(a.program, q(14))).child(txt(a.tab_name.slice(0, 16), Math.max(8, q(12)), a.focused ? "#fff8e1" : ink));
+      .child(icon(a.program, q(14))).child(txt(tabName(a).slice(0, 16), Math.max(8, q(12)), a.focused ? "#fff8e1" : ink));
   }
 
   screen(a, k) {
@@ -678,6 +710,7 @@ export default class Office extends View {
         const extra = (this.helpers ?? []).filter((t) => !seen.has(t.address));
         list = [...list, ...extra];
       }
+      if (!p.demo) list = [...list, ...subDesks(this.subs ?? {}, list)];   // sub-agents count like any agent
       const now = Date.now();
       const toggle = (cx) => { this.m.lastUser = Date.now(); this.toggleDemo(); cx.notify(); };
       // clicking him: he turns and says something for two ticks
@@ -688,10 +721,11 @@ export default class Office extends View {
         cx.notify();
       };
       if (this.demoAt != null) {
-        const t = now - this.demoAt, i = Math.floor(t / DEMO_MS) % DEMO_STATES.length, [label, sts, party, ship, mAt, ages] = DEMO_STATES[i];
+        const t = now - this.demoAt, i = Math.floor(t / DEMO_MS) % DEMO_STATES.length, [label, sts, party, ship, mAt, ages, subs] = DEMO_STATES[i];
         // The 1s timer re-renders the demo: squashed for the first second, blown out until 3s, then gone.
         const into = t % DEMO_MS, stage = !ship || into >= 3000 ? null : into < 1000 ? 0 : 1;
-        const fake = sts.map((status, j) => ({ address: `demo-${j}`, status, tab_name: `bot ${j + 1}`, program: null, focused: false }));
+        const fake = sts.map((status, j) => ({ address: `demo-${j}`, status, tab_name: `bot ${j + 1}`, program: null, focused: false,
+          ...(subs?.[j] ? { subs: { done: subs[j][0], total: subs[j][1], running: subs[j][1] - subs[j][0] } } : {}) }));
         const count = (st) => sts.filter((x) => x === st).length;
         const m = { working: count("working"), blocked: count("blocked"), longestWorkingMs: 0, longestBlockedMs: 0, longestBlockedAddr: null,
           welcomeAddr: null, userIdleMs: 0, hour: 12, seen: sts.length, idleMs: 0, seed: this.seed, fx: {},
@@ -707,13 +741,19 @@ export default class Office extends View {
       if (list.some((a) => prev[a.address] === "working" && a.status === "done")) this.partyUntil = now + 3000;
       const m = this.trackMetrics(list, prev, !this.prevStatus);
       this.prevStatus = Object.fromEntries(list.map((a) => [a.address, a.status]));
+      list = foldSubs(list);                                 // sub-agents: a 2/5 badge on their parent's desk
       // Desks in last-active order: busy agents are active now; the rest since they entered their
       // status (hc's status_ms when it agrees, else when this panel saw the change). idle: ms since.
       const lastActive = {}, idle = {};
+      const statusAt = (a) => (this.m.hcSince[a.address]?.status === a.status ? this.m.hcSince[a.address].at : null) ?? this.m.local[a.address]?.at ?? now;
+      // Finished and not answered yet, looked at or not: since when (kept across restarts).
+      this.waiting ??= (() => { try { return JSON.parse(localStorage.getItem("waiting") ?? "{}") ?? {}; } catch { return {}; } })();
+      const waiting = trackWaiting(this.waiting, list, statusAt);
+      if (JSON.stringify(waiting) !== JSON.stringify(this.waiting)) { this.waiting = waiting; try { localStorage.setItem("waiting", JSON.stringify(waiting)); } catch {} }
+      list = list.map((a) => (waiting[a.address] != null ? { ...a, waiting: true } : a));
       for (const a of list) {
-        const busy = a.status === "working" || a.status === "blocked";
-        const hcAt = this.m.hcSince[a.address]?.status === a.status ? this.m.hcSince[a.address].at : null;
-        lastActive[a.address] = busy ? now : hcAt ?? this.m.local[a.address]?.at ?? now;
+        const busy = a.status === "working" || a.status === "blocked" || a.subs?.running > 0;
+        lastActive[a.address] = busy ? now : waiting[a.address] ?? statusAt(a);
         idle[a.address] = busy ? 0 : options().dev && this.dev.desks ? DESK_AGES[this.dev.desks] : now - lastActive[a.address];
       }
       list = byLastActive(list, lastActive);
@@ -742,7 +782,7 @@ export default class Office extends View {
     if (role === "rail") {
       const s = spaces().find((s) => s.active), tab = s?.tabs.find((t) => t.active);
       return h_flex().size_full().bg(wood).px(16).items_center()
-        .child(txt(`${s?.name ?? ""} / ${tab?.name ?? ""}`, 12, "#fff1d6"));
+        .child(txt(`${s ? spaceName(s) : ""} / ${tab ? tabText(tab.id, tab.name, "Tab") : ""}`, 12, "#fff1d6"));
     }
     // props.demo fills the desks with sample workers in every state (for previews).
     const list = p.demo ? DEMO : agents();
@@ -756,7 +796,7 @@ export default class Office extends View {
     for (const a of list) {
       const g = groups.at(-1);
       if (g && g.space === a.space) g.agents.push(a);
-      else groups.push({ space: a.space, name: a.space_name, agents: [a] });
+      else groups.push({ space: a.space, name: spaceLabel(a), agents: [a] });
     }
     if (!groups.length) groups.push({ space: null, name: "", agents: [] });
     // A rug colour per space, fixed by its id, never the same as the group beside it.
@@ -827,9 +867,9 @@ export default class Office extends View {
       .when(!!hovered, (e) => {
         const x = Math.min(hd.x + sw - 10, w - 200);
         return e.child(v_flex().absolute().left(x).top(hd.y).w(180).p(8).gap(4).bg("#fff27a").border(2).border_color("#d8c440")
-          .child(txt(hovered.tab_name, 12, ink).truncate())
-          .child(txt(hovered.space_name ?? "", 12, "#6b5a4a").truncate())
-          .when(!!hovered.title, (e) => e.child(txt(hovered.title, 12, "#6b5a4a").truncate()))
+          .child(txt(tabName(hovered), 12, ink).truncate())
+          .child(txt(spaceLabel(hovered), 12, "#6b5a4a").truncate())
+          .when(!!hovered.title, (e) => e.child(txt(tabLabel(hovered, hovered.title, ""), 12, "#6b5a4a").truncate()))
           .child(txt(hovered.status.toUpperCase(), 12, hovered.status === "blocked" ? "#a8322a" : ink)));
       })
       .child(v_flex().absolute().left(16).top(14).gap(4).p(8).bg("#fbfbf6").border(3).border_color("#6b3f1f")
