@@ -350,9 +350,9 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - `options.js`: the Options dialog, opened from OPTS in the header (its own `on_mouse_down` /
   `on_click` stop propagation, so the header's demo toggle doesn't fire) or
   `herdr-app do sitandwatch.options`, as `openOverlay({ mod: "sitandwatch", kind: "dialog", width: 380,
-  height: 540, props: { options: true } })`. With `props().options` the view skips the panel's timers
+  height: 610, props: { options: true } })`. With `props().options` the view skips the panel's timers
   and draws the dialog: height (`HEIGHTS` in `rules.js`: 240/300/400/500, or `layout`), floor (`FLOORS` in `rules.js`, slate `#6b7a8f` by default), pets on/off,
-  speech bubbles on/off, chaos and developer mode.
+  speech bubbles on/off, activity bubbles on/off, chaos and developer mode.
 - Stored in `shared("sitandwatch.options")`, read through `readOptions()` (any missing or broken value
   falls back to the default). Shared rather than `localStorage`, which is per copy: the dialog is a
   copy of its own.
@@ -442,12 +442,34 @@ add to `~/.claude/settings.json`:
 ## Activity hook
 
 `hooks/sitandwatch-activity.py` is a Claude Code `PreToolUse` hook (async). `describe()` turns the
-tool call into a phrase: Read/Edit/Write → `Reading|Editing <file name>`, Bash → `Running <program [subcommand]>`
-(leading `VAR=value` skipped, a path cut to its name, no other arguments: they can hold secrets), Grep → `Searching <pattern>`, Glob → `Looking for <pattern>`, Task/Agent → `Delegating:
-<description>`, WebFetch/WebSearch, TodoWrite → `Planning`, else the tool name. `phrase()` keeps
-printable ASCII on one line, at most 40 characters (cut at a word, `...`). It sends `herdr-app do
+tool call into a phrase, a plain verb or the tool's own name first: Read → `Read <file name>`, Edit/Write → `Edit <file name>`, Bash → `Run <program [subcommand]>`
+(leading `VAR=value` skipped, a path cut to its name, no other arguments: they can hold secrets), Grep → `Grep <pattern>`, Glob → `Glob <pattern>`, Task/Agent → `> <description>`,
+WebSearch → `Search <query>`, WebFetch → `Read the web`, TodoWrite → `Plan`, an MCP tool → `Use <service>`
+(`mcp__claude_ai_Gmail__search_threads` → `Use Gmail`), else the tool name. The panel's `sayText()` keeps
+an act's leading `>` (it drops only a title's status glyph). `phrase()` keeps
+printable ASCII on one line, at most 20 characters (cut at a word, `...`; mid-word if a word cut would
+leave only the verb, as in `Read a-very-long-...`). It sends `herdr-app do
 sitandwatch.act-<HC_TERMINAL_ID>-<phrase in base64url, no padding>`; outside Herdr, or for another
-event, nothing. Install:
+event, nothing.
+
+Keeping secrets off the screen:
+
+- **At most 20 characters**, what a bubble can show (`sayText()`), cut at a word. What can't be shown
+  never leaves the hook: not in `herdr-app`'s arguments (other accounts can see those in `ps`), not in
+  the cache. A long key in a pattern goes with the cut word.
+- **`redact()`** turns secret-shaped words in typed text (the Grep/Glob pattern, the web query, a
+  sub-agent's description) into `***`: a known key prefix (`SECRET_PREFIX`: `sk-`, `ghp_`, `xox?-`,
+  `AKIA`, `eyJ`, `AIza`, `-----BEGIN` and others), or 6+ characters mixing letters with digits, which
+  catches short passwords like `hunter2` that fit in 20 characters. It costs the odd `sha256`.
+  All-letter passwords still show. File names aren't redacted: they're names, not contents.
+- **A subcommand only for `SUBCOMMANDS`** (git, npm, gh, docker, cargo and the like), and only if it's
+  letters and dashes. Otherwise the second word is an argument: `printf <token>` shows `Run printf`,
+  `cd <client-folder>` shows `Run cd`.
+- **Off switch**: with the "Activity bubbles" option off, `enabled()` reads it from Herdr's
+  `shared.json` (`HERDR_APP_HOME`, default `~/.config/herdr-app`) and the hook sends nothing. If it
+  can't read the file, it counts as on.
+
+Install:
 
 ```json
 "PreToolUse": [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/sitandwatch-activity.py", "async": true, "timeout": 10 }] }]
@@ -456,7 +478,21 @@ event, nothing. Install:
 In the mod, `parseActCommand()` decodes it (refusing anything not letters/digits/`-`/`_`, over 80, or
 not printable ASCII once decoded) into `this.acts[terminal] = { text, at }`. A desk's bubble says
 `freshAct()` (under `ACT_FRESH_MS`, a minute) before its title, both through `tabLabel` (screenshot
-mode) and `sayText()` (20 characters).
+mode) and `sayText()` (20 characters). With the "Activity bubbles" option off (`options().activity`, or
+`herdr-app do sitandwatch.activity` to toggle), acts are ignored and every bubble is the title.
+
+Repeats are cheap. Each send costs a `herdr-app` process and about 7.5ms of Herdr's own dispatch, and a busy
+session repeats itself ("Read main.js" three times), so:
+
+- The hook skips a command identical to the one it last sent from that terminal under `REPEAT_S`
+  (30s, inside `ACT_FRESH_MS`, so a desk doing the same thing never goes stale). It remembers the last send
+  in `~/.cache/sitandwatch/sitandwatch-act-<terminal>` (`SITANDWATCH_ACT_DIR` overrides it, for the
+  checks). The folder is created 0700 and must be a real folder the user owns. The file is opened 0600
+  with `O_NOFOLLOW`, so a link planted at its path is refused and its target left alone. Not the temp
+  folder: without `TMPDIR` that's the shared `/tmp`. Any trouble with the cache means it sends.
+- The panel redraws for an act only when `actChanged()` says the bubble changes: new text, or the
+  same text after the old one went stale. A repeat still refreshes its time. The command loop's own
+  redraw skips `act-` commands for this.
 
 ## Sub-agent hook
 

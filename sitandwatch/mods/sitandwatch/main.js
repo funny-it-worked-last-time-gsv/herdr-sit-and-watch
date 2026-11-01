@@ -7,7 +7,7 @@ import { LINES } from "./lines.js";
 import { panel } from "./panel.js";
 import { spaceLabel, tabLabel, tabName } from "./names.js";
 import { spaceName, tabText } from "./privacy.js";
-import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, planHeight, HEIGHT_TROUBLE, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_OPEN, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting, talker, sayText, SAY_TURN_MS, SAY_SHOW_MS, parseActCommand, freshAct } from "./rules.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, planHeight, HEIGHT_TROUBLE, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_OPEN, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting, talker, sayText, SAY_TURN_MS, SAY_SHOW_MS, parseActCommand, freshAct, actChanged } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -243,7 +243,8 @@ export default class Office extends View {
           const c = await nextCommand();
           if (typeof c !== "string") return;                  // the channel closed (teardown): stop, don't spin
           let mine = false;
-          try { mine = localStorage.getItem(OWNER) === token; cx.notify(); } catch { mine = false; }
+          // act- decides its own redraw (most repeat what the bubble already says); every other command redraws here
+          try { mine = localStorage.getItem(OWNER) === token; if (!c.startsWith("act-")) cx.notify(); } catch { mine = false; }
           if (!mine) { try { run(`sitandwatch.${c}`); } catch {} return; }
           // One bad command never ends the loop: the hook's events and every later command still land.
           try {
@@ -254,6 +255,8 @@ export default class Office extends View {
           if (c === "dev") { this.dev = { mood: null, level: null }; setOption({ dev: !options().dev }); cx.notify(); }
           // `herdr-app do sitandwatch.chaos` turns chaos mode on for good (or off again)
           if (c === "chaos") { setOption({ chaos: !options().chaos }); cx.notify(); }
+          // `herdr-app do sitandwatch.activity`: the activity bubbles on or off (the hook reads it too, and stops sending)
+          if (c === "activity") { this.acts = {}; setOption({ activity: !options().activity }); cx.notify(); }
           if (c === "options") openOptions();
           if (c === "wander") this.wanderTick(cx, true);
           if (c === "min") this.minimise(cx);
@@ -267,7 +270,11 @@ export default class Office extends View {
           if (sub) this.subEvent(sub, cx);
           // act-<terminal>-<text>: what that session is doing now (the activity hook), for its bubble
           const act = parseActCommand(c);
-          if (act) { (this.acts ??= {})[act.term] = { text: act.text, at: Date.now() }; cx.notify(); }
+          if (act && options().activity) {
+            const prev = this.acts?.[act.term], now = Date.now();
+            (this.acts ??= {})[act.term] = { text: act.text, at: now };   // a repeat still refreshes the time
+            if (actChanged(prev, act.text, now)) cx.notify();
+          }
           // desks-<1h|8h|real>: pretend every desk not busy has been idle that long (cobwebs)
           if (c.startsWith("desks-")) { const v = c.slice(6); this.dev.desks = DESK_AGES[v] ? v : null; cx.notify(); }
           // ship, ship-merged, ship-deployed: the hook says what shipped, for the banner
@@ -886,8 +893,8 @@ export default class Office extends View {
       // a working desk's turn to say what it's doing (its terminal title, through screenshot mode's renames)
       const sayAt = talker(list, now), sayDesk = list.find((a) => a.address === sayAt);
       // its latest activity (the hook) while fresh, else its title; both through screenshot mode's renames
-      const act = sayDesk ? freshAct(this.acts?.[sayAt], now) : null;
-      const say = sayDesk ? { address: sayAt, text: sayText(tabLabel(sayDesk, act ?? sayDesk.title ?? "", ""), Math.floor(now / SAY_TURN_MS)) } : null;
+      const act = sayDesk && options().activity ? freshAct(this.acts?.[sayAt], now) : null;
+      const say = sayDesk ? { address: sayAt, text: sayText(tabLabel(sayDesk, act ?? sayDesk.title ?? "", ""), Math.floor(now / SAY_TURN_MS), act != null) } : null;
       try { return panel(list, (this.partyUntil ?? 0) > now, { say, toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk, idle, power: this.m.power,
         min: this.min?.axis ?? null, onMin: (cx) => this.minimise(cx),
         knock: canKnock(m.longestWorkingMs, devLevel(list)) || (this.m.knockUntil ?? 0) > now, canStage: this.m.canStage,

@@ -140,6 +140,7 @@ export function readOptions(raw) {
     floor: Object.hasOwn(FLOORS, o.floor) ? o.floor : DEFAULT_OPTIONS.floor,   // own keys only: not "toString"
     pets: Object.fromEntries(Object.keys(DEFAULT_OPTIONS.pets).map((k) => [k, pets[k] !== false])),
     speech: o.speech !== false,
+    activity: o.activity !== false,   // desk bubbles say what each session is doing (the activity hook)
     chaos: o.chaos === true,
     dev: o.dev === true,
   };
@@ -365,8 +366,10 @@ export function talker(list, now) {
 // What it says: the terminal's title (Claude Code sets it to the task) without its status glyph, at most
 // 20 characters (cut at a word, with "…"); with no title, a made-up task picked by turn.
 export const DEMO_TASKS = ["Fixing the tests", "Reading the docs", "Refactoring auth", "Writing a migration", "Reviewing the diff", "Adding dark mode", "Chasing a flaky test", "Updating the README"];
-export function sayText(title, turn) {
-  const t = String(title ?? "").replace(/^[^A-Za-z0-9]+/, "").trim();
+// act: the text is the activity hook's phrase, not a title, so its leading symbol stays ("> Review the
+// diff" is a sub-agent); a title's leading status glyph ("✳") is dropped.
+export function sayText(title, turn, act = false) {
+  const t = (act ? String(title ?? "") : String(title ?? "").replace(/^[^A-Za-z0-9]+/, "")).trim();
   const s = t || DEMO_TASKS[Math.abs(turn) % DEMO_TASKS.length];
   if (s.length <= 20) return s;
   const cut = s.slice(0, 20), space = cut.lastIndexOf(" ");   // whole words where it can
@@ -374,7 +377,7 @@ export function sayText(title, turn) {
 }
 
 // ---- what each session is really doing (the activity hook) ---------------------------------------
-// `act-<terminal>-<text>`: the PreToolUse hook's phrase ("Editing main.js") in base64url. Returns
+// `act-<terminal>-<text>`: the PreToolUse hook's phrase ("Edit main.js") in base64url. Returns
 // { term, text } or null (anything malformed, or not printable ASCII).
 const B64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 export function b64urlDecode(s) {
@@ -395,3 +398,7 @@ export function parseActCommand(c) {
 // A desk's bubble says its latest activity while that's under a minute old, else its title.
 export const ACT_FRESH_MS = 60000;
 export const freshAct = (act, now) => (act && now - act.at < ACT_FRESH_MS ? act.text : null);
+// Whether a new act changes what the bubble shows, so the panel needs a redraw: new text, or the
+// same text after the old one went stale (the bubble had gone back to the title). A busy session
+// repeats itself a lot ("Read main.js" three times), and each redraw is a whole panel.
+export const actChanged = (prev, text, now) => !prev || prev.text !== text || now - prev.at >= ACT_FRESH_MS;

@@ -328,13 +328,14 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   //   missing from a partial pets object reads as off, unknown pet names survive, the default floor stops being slate, or
   //   setOption() replaces the stored object instead of merging; why_new=the golden only ever stores { dev: true }, nothing
   //   reads options back; seam=none; no_claim=does not check names like "toString" as a floor (they pass today, see report)
-  const DEF = { height: null, floor: "slate", pets: { Buddy: true, Snowy: true, Simba: true }, speech: true, chaos: false, dev: false };
+  const DEF = { height: null, floor: "slate", pets: { Buddy: true, Snowy: true, Simba: true }, speech: true, activity: true, chaos: false, dev: false };
   const cases = [
     [undefined, DEF], [null, DEF], ["garbage", DEF], [42, DEF], [{}, DEF],
     [{ floor: "lava" }, DEF], [{ floor: "teal" }, { ...DEF, floor: "teal" }],
     [{ pets: "no" }, DEF], [{ pets: null }, DEF], [{ pets: { Rex: false } }, DEF],
     [{ pets: { Simba: false } }, { ...DEF, pets: { Buddy: true, Snowy: true, Simba: false } }],
     [{ speech: false }, { ...DEF, speech: false }], [{ speech: "no" }, DEF],
+    [{ activity: false }, { ...DEF, activity: false }], [{ activity: "no" }, DEF], [{ activity: 0 }, DEF],
     [{ chaos: true }, { ...DEF, chaos: true }], [{ chaos: "true" }, DEF], [{ chaos: 1 }, DEF],
     [{ dev: true }, { ...DEF, dev: true }], [{ dev: 1 }, DEF], [{ dev: "yes" }, DEF],
     [{ height: 400 }, { ...DEF, height: 400 }], [{ height: 401 }, DEF], [{ height: "400" }, DEF], [{ height: 0 }, DEF],
@@ -548,7 +549,7 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (optsNow().chaos) fails.push("commands: a second \"chaos\" should turn it off");
   world.overlays = [];
   await send("options");
-  if (!same(world.overlays, [{ mod: "sitandwatch", kind: "dialog", width: 380, height: 540, props: { options: true } }])) fails.push(`commands: "options" should open the dialog, overlays ${JSON.stringify(world.overlays)}`);
+  if (!same(world.overlays, [{ mod: "sitandwatch", kind: "dialog", width: 380, height: 610, props: { options: true } }])) fails.push(`commands: "options" should open the dialog, overlays ${JSON.stringify(world.overlays)}`);
   render(o, LISTS.w1);
   await send("pets-ship");
   if (o.dev.pets !== "ship" || !ids(render(o, LISTS.w1)).includes("pet-awoo")) fails.push(`commands: "pets-ship" should force the ship scene, pets ${o.dev.pets}`);
@@ -583,8 +584,8 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (optsNow().pets.Simba !== false || !optsNow().pets.Buddy) fails.push(`dialog: Simba's pill should switch only Simba off, ${JSON.stringify(optsNow().pets)}`);
   press("opt-pet-Simba");
   if (optsNow().pets.Simba !== true) fails.push("dialog: Simba's pill again should switch Simba back on");
-  press("opt-speech-off"); press("opt-chaos-on"); press("opt-dev-on"); press("opt-height-400");
-  const want = { height: 400, floor: "teal", pets: { Buddy: true, Snowy: true, Simba: true }, speech: false, chaos: true, dev: true };
+  press("opt-speech-off"); press("opt-activity-off"); press("opt-chaos-on"); press("opt-dev-on"); press("opt-height-400");
+  const want = { height: 400, floor: "teal", pets: { Buddy: true, Snowy: true, Simba: true }, speech: false, activity: false, chaos: true, dev: true };
   if (!same(optsNow(), want)) fails.push(`dialog: after the clicks options are ${JSON.stringify(optsNow())}`);
   press("opt-dev-off");
   if (optsNow().dev) fails.push("dialog: dev off should turn developer mode off");
@@ -1158,8 +1159,8 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
 
 // ---- real activity: the PreToolUse hook → the desk's bubble ------------------------------------------
 {
-  // Value: protects=the activity hook turning tool calls into short phrases (Editing/Reading <file>, Running <cmd>,
-  //   Searching <pattern>, Delegating; a command shows only its program and subcommand, never assignments, paths or
+  // Value: protects=the activity hook turning tool calls into short phrases (Edit/Read <file>, Run <cmd>,
+  //   Grep/Glob <pattern>, "> " for a sub-agent, Use <MCP service>; a command shows only its program and subcommand, never assignments, paths or
   //   arguments that could hold secrets), sent base64url with the terminal and decoded by the panel; a desk's bubble saying
   //   its fresh activity (under a minute) through screenshot mode, else its title; malformed or non-ASCII commands
   //   refused; fails_when=the hook's phrase, encoding or event filter changes, the panel stops decoding, a stale act still
@@ -1172,7 +1173,7 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   const dir = mkdtempSync(join(tmpdir(), "saw-act-")), out = join(dir, "sent");
   wf(join(dir, "herdr-app"), `#!/bin/sh\necho "$@" >> "${out}"\n`); chmodSync(join(dir, "herdr-app"), 0o755);
   const hook = join(here, "..", "sitandwatch", "hooks", "sitandwatch-activity.py");
-  const run = (data, term = "t8") => spawnSync("python3", [hook], { input: typeof data === "string" ? data : JSON.stringify(data), env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, HC_TERMINAL_ID: term } });
+  const run = (data, term = "t8") => spawnSync("python3", [hook], { input: typeof data === "string" ? data : JSON.stringify(data), env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, HC_TERMINAL_ID: term, SITANDWATCH_ACT_DIR: dir, HERDR_APP_HOME: dir } });
   const pre = (tool_name, tool_input) => ({ hook_event_name: "PreToolUse", tool_name, tool_input });
   run(pre("Edit", { file_path: "/home/x/proj/src/main.js" }));
   run(pre("Bash", { command: "npm   test --  --watch=false extra" }));   // program and subcommand only
@@ -1186,26 +1187,114 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   const sent = existsSync(out) ? rf(out, "utf8").trim().split("\n") : [];
   const decoded = sent.map((l) => R.parseActCommand(l.replace(/^do sitandwatch\./, "")));
   const texts6 = decoded.map((d) => d && `${d.term}:${d.text}`);
-  const want = ["t8:Editing main.js", "t8:Running npm test", "t8:Reading README.md", "t8:Searching useAuth", "t8:Delegating: Review the diff", "t8:Running curl"];
+  const want = ["t8:Edit main.js", "t8:Run npm test", "t8:Read README.md", "t8:Grep useAuth", "t8:> Review the diff", "t8:Run curl"];
   if (JSON.stringify(texts6) !== JSON.stringify(want) || bad.status !== 0) fails.push(`act: the hook should send these phrases and nothing else, got ${JSON.stringify(texts6)} exit ${bad.status}`);
   if (sent.some((l) => !/^do sitandwatch\.act-t8-[A-Za-z0-9_-]+$/.test(l))) fails.push(`act: commands should be letters, digits, - and _ only, got ${JSON.stringify(sent)}`);
+  // Repeats: the same phrase again within 30s isn't sent (it costs a process and Herdr's dispatch);
+  // another phrase is, and so is the same one once the last send is 30s old.
+  const count = () => (existsSync(out) ? rf(out, "utf8").trim().split("\n").length : 0);
+  const c0 = count();
+  run(pre("Read", { file_path: "/a/README.md" }));                 // the last phrase sent above was "Run curl"
+  run(pre("Read", { file_path: "/a/README.md" }));                 // a repeat: skipped
+  const c1 = count();
+  const cache = join(dir, "sitandwatch-act-t8"), [, last] = rf(cache, "utf8").split("\t");
+  wf(cache, `${Date.now() / 1000 - 31}\t${last}`);                 // that send is now 31s old
+  run(pre("Read", { file_path: "/a/README.md" }));
+  const c2 = count();
+  if (!(c1 === c0 + 1 && c2 === c1 + 1))
+    fails.push(`act: the hook should skip a repeat under 30s and send it after, sent +${c1 - c0} then +${c2 - c1}`);
+  // The cache is owner-only and never written through a link: a link planted at its path (as another
+  // account could in a shared folder) leaves its target alone, and the phrase is still sent.
+  const { statSync, symlinkSync, unlinkSync } = await import("node:fs");
+  if ((statSync(cache).mode & 0o077) !== 0) fails.push(`act: the hook's cache should be owner-only, got ${(statSync(cache).mode & 0o777).toString(8)}`);
+  const victim = join(dir, "victim");
+  wf(victim, "precious"); unlinkSync(cache); symlinkSync(victim, cache);
+  const c3 = count();
+  run(pre("Read", { file_path: "/a/other.md" }));
+  if (rf(victim, "utf8") !== "precious") fails.push(`act: the hook wrote through a link planted at its cache, the target now holds ${JSON.stringify(rf(victim, "utf8"))}`);
+  if (count() !== c3 + 1) fails.push(`act: with a link at its cache the hook should still send, sent +${count() - c3}`);
+  // Secrets stay off the screen: the hook sends at most the 20 characters a bubble can show (cut at a
+  // word), secret-shaped words in typed text (keys, tokens, passwords mixing letters and digits) become
+  // ***, and a command's second word shows only for programs with subcommands (`git push`, not
+  // `printf <token>` or `cd <client-folder>`).
+  const phraseOf = (data) => {
+    const r = spawnSync("python3", ["-c", "import sys,json,importlib.util as u; s=u.spec_from_file_location('h', sys.argv[1]); m=u.module_from_spec(s); s.loader.exec_module(m); d=json.loads(sys.argv[2]); print(m.phrase(m.describe(d[0], d[1])))", hook, JSON.stringify(data)]);
+    return r.stdout.toString().trim();
+  };
+  const secretCases = [
+    [["Grep", { pattern: "sk-proj-Ab3dEf9GhIjKlMnOpQrSt" }], "Grep ***"],
+    [["Grep", { pattern: "AKIAIOSFODNN7EXAMPLE" }], "Grep ***"],
+    [["Grep", { pattern: "hunter2" }], "Grep ***"],
+    [["Grep", { pattern: "p4ssw0rd!" }], "Grep ***"],
+    [["WebSearch", { query: "is eyJhbGciOiJIUzI1NiJ9 valid" }], "Search is *** valid"],
+    [["Bash", { command: "printf ghp-abcdefghijklmnop | gh auth login" }], "Run printf"],
+    [["Bash", { command: "cd client-acme-secret && npm test" }], "Run cd"],
+    [["Bash", { command: "git push -u origin main" }], "Run git push"],
+    [["Grep", { pattern: "useAuth" }], "Grep useAuth"],
+    [["Read", { file_path: "/a/a-very-long-file-name.md" }], "Read a-very-long-..."],   // mid-word: a word cut would leave only "Read"
+    [["Task", { description: "Review the diff and fix it" }], "> Review the diff..."],     // a word ending right at the limit stays whole
+    [["Glob", { pattern: "**/*.ts" }], "Glob **/*.ts"],
+    [["TodoWrite", {}], "Plan"],
+    [["WebFetch", { url: "https://example.com/private" }], "Read the web"],
+    [["mcp__claude_ai_Gmail__search_threads", {}], "Use Gmail"],
+    [["mcp__plugin_vercel_vercel__list_projects", {}], "Use vercel"],
+  ];
+  for (const [data, want] of secretCases) {
+    const got = phraseOf(data);
+    if (got !== want) fails.push(`act: ${JSON.stringify(data)} should send ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
+    if (got.length > 20) fails.push(`act: phrases should be at most 20 characters, got ${JSON.stringify(got)}`);
+  }
+  // Off (the Options dialog, saved in Herdr's shared state): the hook sends nothing at all.
+  wf(join(dir, "shared.json"), JSON.stringify({ "sitandwatch.options": { activity: false } }));
+  const c5 = count();
+  run(pre("Edit", { file_path: "/a/off.js" }));
+  if (count() !== c5) fails.push(`act: with activity bubbles off the hook should send nothing, sent +${count() - c5}`);
+  unlinkSync(join(dir, "shared.json"));
   rmSync(dir, { recursive: true, force: true });
   // The panel refuses anything malformed.
   const refused = ["act-t8-", "act-t8-!!", "act--aGk", "act-t8-" + Buffer.from("tab\there").toString("base64url"), "act-t8-" + "a".repeat(81)].map(R.parseActCommand);
   if (refused.some(Boolean)) fails.push(`act: malformed or non-ASCII act commands should be refused, got ${JSON.stringify(refused)}`);
   // The bubble: fresh activity first (renamed by screenshot mode), the title after a minute.
   await S.settle(); S.dropCommandWaiters();
-  const { o } = mount();
+  const { o, cx } = mount();
   const send = async (c) => { S.sendCommand(c); await S.settle(); await S.settle(); };
   world.shared.privacy = { on: true, hidden: [], phrases: [{ text: "secretproj", alias: "proj" }] };
   const agent = () => [{ address: "t8", status: "working", tab_name: "build", title: "✳ Fix the login bug", program: null, focused: false }];
   clock.now = Math.ceil(clock.now / 7000) * 7000 + 500;
-  await send("act-t8-" + Buffer.from("Editing secretproj.js").toString("base64url"));
+  await send("act-t8-" + Buffer.from("Edit secretproj.js").toString("base64url"));
   world.agents = agent(); let t = o.render();
   const bubble = () => { let v = null; walk(t, (e) => { if (e.idv === "psay-t8") walk(e, (k) => { if (k.text != null) v = k.text; }); }); return v; };
-  if (bubble() !== "Editing proj.js") fails.push(`act: the bubble should say the fresh activity, renamed by screenshot mode, got ${bubble()}`);
+  if (bubble() !== "Edit proj.js") fails.push(`act: the bubble should say the fresh activity, renamed by screenshot mode, got ${bubble()}`);
   clock.now += 63000; clock.now = Math.ceil(clock.now / 7000) * 7000 + 500; world.agents = agent(); t = o.render();
   if (bubble() !== "Fix the login bug") fails.push(`act: after a minute the bubble should go back to the title, got ${bubble()}`);
+  // A sub-agent's "> " stays on the bubble (only a title's leading glyph, like ✳, is dropped).
+  await send("act-t8-" + Buffer.from("> Review the diff").toString("base64url"));
+  world.agents = agent(); t = o.render();
+  if (bubble() !== "> Review the diff") fails.push(`act: a sub-agent's bubble should keep its "> ", got ${bubble()}`);
+  // Redraws: an act that repeats the bubble's text only refreshes its time; new text, or the same
+  // text once the old one went stale, redraws. Each redraw is the whole panel, and a busy session
+  // repeats itself a lot.
+  const actOf = (s) => "act-t8-" + Buffer.from(s).toString("base64url");
+  const n0 = cx.notified; await send(actOf("Read a.js"));
+  const n1 = cx.notified; await send(actOf("Read a.js"));
+  const n2 = cx.notified; await send(actOf("Read b.js"));
+  const n3 = cx.notified; clock.now += 61000; await send(actOf("Read b.js"));
+  const n4 = cx.notified;
+  if (!(n1 > n0 && n2 === n1 && n3 > n2 && n4 > n3))
+    fails.push(`act: only a changed or revived bubble should redraw (new, repeat, new, stale repeat), got +${n1 - n0} +${n2 - n1} +${n3 - n2} +${n4 - n3}`);
+  if (o.acts?.t8?.text !== "Read b.js") fails.push(`act: a repeat should still be recorded, got ${JSON.stringify(o.acts?.t8)}`);
+  // Activity bubbles off: the bubble is the title again, a new act is ignored without a redraw, and
+  // `herdr-app do sitandwatch.activity` turns them off and on.
+  await send("activity");
+  if (OPT.options().activity !== false) fails.push(`act: "activity" should turn the bubbles off, got ${OPT.options().activity}`);
+  clock.now = Math.ceil(clock.now / 7000) * 7000 + 500;
+  const n5 = cx.notified; await send(actOf("Read c.js"));
+  world.agents = agent(); t = o.render();
+  if (bubble() !== "Fix the login bug") fails.push(`act: with activity bubbles off the bubble should be the title, got ${bubble()}`);
+  if (o.acts?.t8?.text === "Read c.js") fails.push("act: with activity bubbles off an act should be ignored");
+  if (cx.notified !== n5) fails.push(`act: with activity bubbles off an act shouldn't redraw, got +${cx.notified - n5}`);
+  await send("activity");
+  if (OPT.options().activity !== true) fails.push(`act: "activity" again should turn the bubbles back on, got ${OPT.options().activity}`);
   delete world.shared.privacy; world.agents = [];
 }
 
