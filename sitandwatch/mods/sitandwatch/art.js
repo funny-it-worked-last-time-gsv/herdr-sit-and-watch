@@ -100,6 +100,145 @@ const CAT = [".......O.O", ".......OOO", "O......OEO", "O..OOOOOOO", ".OOOOOOOO.
 export const CATS = ["#e0913a", "#5b5b66", "#2a2a2a", "#f4f0e6", "#a0704a"];
 export const cat = (coat, s, left) => sprite(left ? CAT.map((row) => [...row].reverse().join("")) : CAT, { O: coat, E: "#7bd389" }, s);
 
+// ---- the household: two cats and a beagle who are disappointed in him -----------
+// Edit this to make them your own pets: name, kind ("cat" or "beagle") and coat colours.
+// The first cat sleeps on the chair back; the second knocks his can off and goes out at night.
+export const PETS = [
+  { name: "Buddy", kind: "beagle", coat: { B: "#7a4a24", T: "#d9a25a", W: "#f4f0e6", K: "#2a2320" } },
+  { name: "Snowy", kind: "cat", coat: { O: "#f4f0e6", o: "#f4f0e6", i: "#f2b8c0" } },
+  { name: "Simba", kind: "cat", coat: { O: "#e0913a", o: "#b86a24", i: "#f2b8c0" } },
+];
+
+// Like sprite(), but far fewer divs (Herdr cuts long renders off): colours are painted most
+// common first, and each colour's rectangles may run through pixels that a later colour paints
+// over, so a coat is a few big blocks with the eyes and patches laid on top.
+const packed = new Map();   // the rectangles for a drawing are worked out once, not every render
+export function blocks(rows, pal, s) {
+  const key = JSON.stringify([rows, pal]);
+  if (!packed.has(key)) packed.set(key, pack(rows, pal));
+  const { W, H, rects } = packed.get(key);
+  return div().relative().w(W * s).h(H * s).children(rects.map(([x, y, w, h, c]) => r(x * s, y * s, w * s, h * s, c)));
+}
+function pack(rows, pal) {
+  // letters that share a colour paint as one (Snowy's shade is her coat)
+  const first = {};
+  for (const [k, v] of Object.entries(pal)) first[v] ??= k;
+  rows = rows.map((row) => [...row].map((c) => (pal[c] ? first[pal[c]] : ".")).join(""));
+  const H = rows.length, W = Math.max(...rows.map((row) => row.length));
+  const at = (x, y) => rows[y]?.[x] ?? ".";
+  const counts = {};
+  for (const row of rows) for (const c of row) if (pal[c]) counts[c] = (counts[c] ?? 0) + 1;
+  const order = Object.keys(counts).sort((p, q) => counts[q] - counts[p]);
+  const rects = [];
+  order.forEach((c, i) => {
+    const later = new Set(order.slice(i + 1));
+    const ok = (x, y) => at(x, y) === c || later.has(at(x, y));
+    const done = new Set();
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (at(x, y) !== c || done.has(`${x},${y}`)) continue;
+      // the widest-or-tallest rectangle from here that covers the most still-uncovered pixels
+      let maxW = 1;
+      while (x + maxW < W && ok(x + maxW, y)) maxW++;
+      let w = 1, h = 1, best = -1;
+      for (let tw = 1; tw <= maxW; tw++) {
+        let th = 1;
+        while (y + th < H && [...Array(tw).keys()].every((k) => ok(x + k, y + th))) th++;
+        let gain = 0;
+        for (let yy = y; yy < y + th; yy++) for (let xx = x; xx < x + tw; xx++) if (at(xx, yy) === c && !done.has(`${xx},${yy}`)) gain++;
+        if (gain > best) { best = gain; w = tw; h = th; }
+      }
+      for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) done.add(`${xx},${yy}`);
+      rects.push([x, y, w, h, pal[c]]);
+    }
+  });
+  return { W, H, rects };
+}
+const flip = (rows) => rows.map((row) => [...row].reverse().join(""));
+
+// Poses, one string per art row. Cats: O coat, o darker coat, i inner ear, W eye white,
+// K pupil and lid, N nose. Beagle: B brown, T tan, W white, K black (saddle, eyes, nose).
+// "Sit" looks sideways at him, half-lidded: the disappointed look.
+const POSE = {
+  cat: {
+    sit: [
+      "O.......O",
+      "Oi.....iO",
+      "OOOOOOOOO",
+      "OKKKOKKKO",
+      "OWWKOWWKO",
+      "OOOONOOOO",
+      ".OOOOOOO.",
+      "..oOOOo..",
+      ".OOoOoOO.",
+      ".OOOOOOO.O",
+      "OOOOOOOOOO",
+      "OOOOOOOOO.",
+    ],
+    curl: [
+      "..o.oOOO...",
+      ".OOOOOOOOO.",
+      "OKKOOoOOoOO",
+      "OOOOOOOOOOo",
+      ".OOOOOOOOO.",
+    ],
+  },
+  beagle: {
+    sit: [
+      "..TTTTTTTT..",
+      ".BBTTTTTTBB.",
+      ".BBKKTTKKBB.",
+      ".BBWKTTWKBB.",
+      ".BBTTTTTTBB.",
+      ".BBTWWWWTBB.",
+      "....WKKW....",
+      "....WWWW....",
+      "..KKKKKKKK..",
+      "..KKKKKKKK..",
+      "..KKKKKKKKT.",
+      "..WWKKKKWW..",
+      ".WWWWWWWWWW.",
+    ],
+    curl: [
+      "....BB.KKKK....",
+      "..BTTTTKKKKKK..",
+      ".TKKTTTTKKKKKT.",
+      "TWWWTTTTTKKKKTT",
+      ".WW.TTTTTTTTWW.",
+    ],
+  },
+};
+
+// One pet in one pose, drawn at scale s; left mirrors it to face the other way.
+export function pet(p, pose, s, left = false) {
+  const rows = POSE[p.kind][pose];
+  const pal = p.kind === "cat"
+    ? { O: p.coat.O, o: p.coat.o, i: p.coat.i, W: "#ffffff", K: "#2a2320", N: "#e07a8a" }
+    : { B: p.coat.B, T: p.coat.T, W: p.coat.W, K: p.coat.K };
+  return blocks(left ? flip(rows) : rows, pal, s);
+}
+
+// Where each pet goes in the corner, in panel px from the chair's left edge (the corner is
+// DEV_W*3 wide, the chair drawn 16px down at scale 3, the rug from cornerH-16).
+// present: he's in the chair, so they're on the floor; else they sleep on it.
+export function pets(st, s, id) {
+  const [buddy, snowy, simba] = PETS;
+  const floor = st.cornerH - 8;                            // their feet, on the rug
+  const at = (x, bottom, node, rows) => div().absolute().left(x).top(bottom - rows * s).child(node);
+  if (!st.present) {
+    const seat = 16 + 17 * 3, back = 16 + 3 * 3;           // tops of the chair seat and back
+    return [
+      at(22, back + 3, pet(snowy, "curl", s), 5).id(`${id}-snowy-curl`),
+      at(12, seat + 5, pet(buddy, "curl", s), 5).id(`${id}-buddy-curl`),
+      at(30, seat - 6, pet(simba, "curl", s, true), 5).id(`${id}-simba-curl`),   // asleep on Buddy
+    ];
+  }
+  return [
+    at(-44, floor, pet(buddy, "sit", s), 13).id(`${id}-buddy-sit`),
+    at(100, floor, pet(snowy, "sit", s, true), 12).id(`${id}-snowy-sit`),
+    at(132, floor, pet(simba, "sit", s, true), 12).id(`${id}-simba-sit`),
+  ];
+}
+
 // ---- the room -------------------------------------------------------------
 
 function shelf(x, R) {
@@ -227,6 +366,22 @@ const CHAIR = { a: "#8a1f2e", d: "#5e1420", l: "#a8323f", b: "#d9b25a", wood: "#
 //   errorWince, burstDance }, provider: "claude" | "codex" | "mixed" | null, night: wear the
 //   nightcap, name: the tab the mood is about (the long-blocked or the new desk) }.
 // A bare boolean means panic.
+// The pose behind a mood: how glazed (depth), the mood narrowed to what's drawn (mode), the level
+// his face and body show (L), and whether he's in the chair at all. spectator() draws from it and
+// pets() uses present, so they always agree on whether the chair is empty.
+export function stance(level, o = {}) {
+  const { panic = false, party = false, ship = false, mood = "normal", fx = {}, poke = 0 } = o;
+  const depth = { glazed: 1, glazedHard: 2, slumped: 3 }[mood] ?? 0, gl = depth > 0;
+  // mood narrowed to the pose actually drawn
+  const mode = mood === "finish" ? "pump" : mood === "blocked" && (fx.blockedPhone ?? 0) ? "phone" : gl ? "glazed" : mood;
+  const L = mode === "burst" || mode === "streak" ? 3
+    : mode === "collapse" || mode === "error" || mode === "allBlocked" || mode === "longIdle" ? 0
+    : gl || mode === "multiBlocked" || mode === "pointAtBlocked" || mode === "areYouSure" ? 1
+    : panic ? Math.min(level, 1) : level;                // a blocked agent kills the mood
+  const present = L > 0 || panic || party || ship || ["collapse", "error", "welcome", "allBlocked", "longIdle"].includes(mode) || poke > 0;
+  return { depth, gl, mode, L, present };
+}
+
 export function spectator(level, s, id, opts) {
   const o = typeof opts === "object" && opts ? opts : { panic: !!opts };
   const { panic = false, party = false, ship = false, firstShip = false, mood = "normal", fx = {}, provider = null, night = false, name = "" } = o;
@@ -236,13 +391,7 @@ export function spectator(level, s, id, opts) {
   const { seed = 0, chaos = false, tint = null, linger = false, poke = 0, pokeLine = "", idleTalk = false, idleN = 0 } = o;
   const { finishPump = 0, blockedPhone = 0, collapse = 0 } = fx;
   const R = (x, y, w, h, c) => r(x * s, y * s, w * s, h * s, c);
-  const depth = { glazed: 1, glazedHard: 2, slumped: 3 }[mood] ?? 0, gl = depth > 0;
-  // mood narrowed to the pose actually drawn
-  const mode = mood === "finish" ? "pump" : mood === "blocked" && blockedPhone ? "phone" : gl ? "glazed" : mood;
-  const L = mode === "burst" || mode === "streak" ? 3
-    : mode === "collapse" || mode === "error" || mode === "allBlocked" || mode === "longIdle" ? 0
-    : gl || mode === "multiBlocked" || mode === "pointAtBlocked" || mode === "areYouSure" ? 1
-    : panic ? Math.min(level, 1) : level;                // a blocked agent kills the mood
+  const { depth, gl, mode, L, present } = stance(level, o);
   const sad = panic && !["collapse", "burst", "streak", "areYouSure"].includes(mode);
   const melt = mode === "allBlocked", dozing = mode === "longIdle";
   const pumpUp = mode === "pump" && finishPump >= 2;    // fist in the air for the first two ticks
@@ -419,12 +568,13 @@ export function spectator(level, s, id, opts) {
     .child(R(4, 17, 18, 6, CHAIR.a)).child(R(4, 22, 18, 4, CHAIR.d))
     .child(R(1, 23, 2, 4, CHAIR.wood)).child(R(23, 23, 2, 4, CHAIR.wood)).child(R(5, 26, 2, 3, CHAIR.wood)).child(R(19, 26, 2, 3, CHAIR.wood));
 
-  // Nothing happening: he's not there. Just the chair, a dent in the cushion and his popcorn.
-  const present = L > 0 || panic || party || ship || ["collapse", "error", "welcome", "allBlocked", "longIdle"].includes(mode) || poke > 0;
+  // Nothing happening: he's not there. Just the chair, a dent in the cushion, his popcorn on the
+  // floor and the pets asleep on it (drawn by pets()).
   if (!present) return chair()
     .child(R(7, 17, 12, 1, CHAIR.d))
-    .child(R(10, 14, 6, 5, "#f4f4f0").child(R(1, 0, 1, 5, "#c9302c")).child(R(3, 0, 1, 5, "#c9302c")).child(R(5, 0, 1, 5, "#c9302c")))
-    .child(R(10, 13, 6, 1, "#fff2b0"));
+    // his popcorn on the floor by the chair: the pets have the seat
+    .child(R(-6, 25, 6, 5, "#f4f4f0").child(R(1, 0, 1, 5, "#c9302c")).child(R(3, 0, 1, 5, "#c9302c")).child(R(5, 0, 1, 5, "#c9302c")))
+    .child(R(-6, 24, 6, 1, "#fff2b0"));
 
   return chair()
     .when(depth >= 2, (e) => e.child(R(21, 7, 5, 2, "#dfe6f0")).child(R(22, 7, 3, 1, "#ffffff")))   // pillow on the armrest

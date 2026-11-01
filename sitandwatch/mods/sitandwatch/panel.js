@@ -1,7 +1,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run } from "herdr";
-import { ink, SCREEN, r, txt, look, bot, spectator, explosion, DEV_W, DEV_H } from "./art.js";
+import { ink, SCREEN, r, txt, look, bot, spectator, stance, pets, explosion, DEV_W, DEV_H } from "./art.js";
 import { DEV_FIRE, effectiveMood, isNight } from "./rules.js";
 
 // ---- developer mode -------------------------------------------------------
@@ -97,6 +97,14 @@ export function panel(list, party = false, opts = {}) {
   const name = list.find((a) => a.address === markAddr)?.tab_name ?? "";
   const levelUp = (m?.fx?.levelUp ?? 0) > 0;          // a warm flash on reaching level 3
   const glow = levelUp ? "#ffd27a77" : ["#ffb06a10", "#ffb06a22", "#ff8a6a30", "#ff5a5a44"][level];
+  // Everything spectator() draws him from; pets() reads whether he's in the chair from the same.
+  const him = {
+    panic, party, ship: ship != null, firstShip: !!opts.firstShip, mood, fx: m?.fx, name,
+    provider: provider(list), night: isNight(m?.hour ?? new Date().getHours()) || mood === "lateNight",
+    seed: m?.seed ?? 0, chaos: !!m?.chaos || (m?.working ?? 0) >= 6, tint: dominantTint(list),
+    linger: (m?.fx?.linger ?? 0) > 0, poke: m?.fx?.poke ?? 0, pokeLine: m?.pokeLine ?? "",
+    idleTalk: m?.idleTalk ?? Math.floor(Date.now() / 30000) % 6 === 0, idleN: Math.floor(Date.now() / 180000),
+  };
   // Nothing here depends on the panel's measured size: flex does all the fitting,
   // so resizing the column never needs a re-render.
   return v_flex().id("saw-panel").size_full().overflow_hidden().bg("#e2a465")
@@ -114,13 +122,9 @@ export function panel(list, party = false, opts = {}) {
       .child(div().relative().w(devW).h(cornerH)
         .child(r(-12, cornerH - 16, devW + 24, 10, "#5e1420"))
         .child(r(devW + 10, 16, 3, devH - 6, "#3a3a3a")).child(r(devW + 3, 4, 17, 13, "#d97a3a"))
-        .child(spectator(level, ds, "pdev", {
-          panic, party, ship: ship != null, firstShip: !!opts.firstShip, mood, fx: m?.fx, name,
-          provider: provider(list), night: isNight(m?.hour ?? new Date().getHours()) || mood === "lateNight",
-          seed: m?.seed ?? 0, chaos: !!m?.chaos || (m?.working ?? 0) >= 6, tint: dominantTint(list),
-          linger: (m?.fx?.linger ?? 0) > 0, poke: m?.fx?.poke ?? 0, pokeLine: m?.pokeLine ?? "",
-          idleTalk: m?.idleTalk ?? Math.floor(Date.now() / 30000) % 6 === 0, idleN: Math.floor(Date.now() / 180000),
-        }).absolute().left(0).top(16))
+        .child(spectator(level, ds, "pdev", him).absolute().left(0).top(16))
+        // Buddy, Snowy and Simba: asleep on the chair when he's not in it, else on the floor
+        .children(pets({ present: stance(level, him).present, cornerH }, ds, "pet"))
         // clicking him: on top of the drawing, so the pixels can't swallow it
         .child(div().id("saw-dev").absolute().left(0).top(16).w(devW).h(devH).cursor_pointer()
           .when(!!opts.onDev, (e) => e.on_click((_e, cx) => opts.onDev(cx))))
