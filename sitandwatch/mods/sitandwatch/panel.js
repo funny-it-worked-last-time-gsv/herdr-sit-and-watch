@@ -2,7 +2,7 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run } from "herdr";
 import { ink, SCREEN, r, txt, look, bot, spectator, stance, pets, explosion, miniFace, DEV_W, DEV_H } from "./art.js";
-import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES, FLOORS, cobwebLevel, DESK_AGES, POWER_FULL, POWER_STEPS, powerShown } from "./rules.js";
+import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES, FLOORS, cobwebLevel, DESK_AGES, sinceLabel, POWER_FULL, POWER_STEPS, powerShown } from "./rules.js";
 import { options, openOptions } from "./options.js";
 
 // ---- developer mode -------------------------------------------------------
@@ -99,6 +99,11 @@ function desk(a, x, y, sw, rh, mark = null, idleMs = 0) {
     .child(r(Math.round(sw / 2) - 26, 27, 52, 6, "#f0dcb0")).child(r(Math.round(sw / 2) - 26, 33, 52, 4, "#d4b27c"))
     .child(div().absolute().left(Math.round(sw / 2) - 12).top(28).child(body))
     .children(cobwebs(sw, cobwebLevel(idleMs), a.address))
+    // finished and not looked at yet: how long it's been waiting, on its screen (over any dust)
+    .when(a.status === "done", (e) => {
+      const label = sinceLabel(idleMs);                       // one element: centred by its own width (5px a character)
+      return e.child(txt(label, 10, "#cfe0ff").absolute().left(Math.round(sw / 2) - Math.round(label.length * 2.5)).top(9).id(`pt-${a.address}`));
+    })
     .when(!!mark && mark !== "areYouSure", (e) => e.child(arrow(sw, mark, a.address)))
     // the meme: the agent asks, he answers from the chair
     .when(mark === "areYouSure", (e) => e.child(div().absolute().left(0).top(0).w(sw).flex().justify_center()

@@ -243,6 +243,9 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - `cobwebLevel(idleMs)`: 1 after an hour (a web in the monitor's top-left corner), 2 after 8 hours (webs on
   both monitor corners and under the desk, and a dusty `#c8ccd477` screen). Each web is one tinted
   `svg("mods/sitandwatch/cobweb.svg")` (`cobweb-r.svg` mirrored), `#e6e9ef`, so they cost one div each.
+- A `done` desk (finished, not looked at yet: looking turns it idle) shows `sinceLabel(idleMs)` on its
+  screen, 10px `#cfe0ff`: `<1m`, `12m`, `3h`, `2d`, from the same last-active time. One element; the 15s
+  re-render keeps it current.
 - Dev: the `desks` row (`real`, `1h`, `8h`), or `herdr-app do sitandwatch.desks-<1h|8h|real>`, pretends every
   desk not busy is that old; only while developer mode is on. Demo state 25 "Old agents: cobwebs".
 

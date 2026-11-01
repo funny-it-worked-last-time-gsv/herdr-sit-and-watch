@@ -35,7 +35,7 @@ work. The more of them are working, the more excited you get. See
 | Nothing for 10 minutes | Back in the chair, dozing. "z Z", and now and then "popcorn's getting cold" |
 | 10+ agents seen this session | Eyes darting about. "how many are there?" |
 | The power bar fills | The bar in the header fills with every second an agent works (20 agent-minutes: about 7 with three at it) and drains slowly when nothing runs. Full: he leaps up, "POWER!", confetti, the pets wide awake. Then it starts again. |
-| Desks | In last-active order: whoever's working first, then the one that stopped most recently. A desk left alone for an hour gets a cobweb; after 8 hours it's covered, screen dusty. |
+| Desks | In last-active order: whoever's working first, then the one that stopped most recently. A finished agent you haven't looked at shows how long it's been waiting on its screen (`12m`). A desk left alone for an hour gets a cobweb; after 8 hours it's covered, screen dusty. |
 | The pets, any time he's there | Buddy, Snowy and Simba sit by the chair giving him a half-lidded side-eye. Meltdown: Buddy covers his eyes. Standing ovation: the cats turn their backs. Something ships: Buddy howls. After 10pm Simba's out. The loudest moment wins. |
 | One crashed or needs you (popcorn spilled) | Buddy goes for the popcorn and eats it down over a minute. |
 | Two or more at it for 10+ minutes | A cat knocks his can off the armrest (from the chair back once the pillow's there). |
