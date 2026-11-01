@@ -21,6 +21,20 @@ def _base(path: str) -> str:
     return os.path.basename(str(path or "").rstrip("/")) or str(path or "")
 
 
+def program(cmd: str) -> str:
+    """A command's program and subcommand only ("npm test", "git push"): leading VAR=value assignments
+    are skipped and a path becomes its last part, and nothing else of the command is shown (arguments can
+    hold paths and secrets)."""
+    words = [w for w in cmd.split()]
+    while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+        words.pop(0)
+    if not words:
+        return "a command"
+    name = _base(words[0])
+    sub = words[1] if len(words) > 1 and re.match(r"^[a-z][a-z0-9-]*$", words[1]) else ""
+    return f"{name} {sub}".strip()
+
+
 def describe(tool: str, args: dict) -> str:
     """A short phrase for this tool call."""
     a = args if isinstance(args, dict) else {}
@@ -29,8 +43,7 @@ def describe(tool: str, args: dict) -> str:
     if tool in ("Edit", "MultiEdit", "Write", "NotebookEdit"):
         return f"Editing {_base(a.get('file_path') or a.get('notebook_path'))}"
     if tool == "Bash":
-        words = str(a.get("command") or "").split()
-        return "Running " + " ".join(words[:3]) if words else "Running a command"
+        return "Running " + program(str(a.get("command") or ""))
     if tool == "Grep":
         return f"Searching {a.get('pattern') or ''}"
     if tool == "Glob":

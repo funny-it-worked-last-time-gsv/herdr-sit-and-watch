@@ -149,7 +149,7 @@ Three optional Claude Code hooks live in `sitandwatch/hooks/`:
   "PreToolUse": [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/sitandwatch-activity.py", "async": true, "timeout": 10 }] }]
   ```
   Before each tool call it sends a short phrase (`Editing main.js`, `Running npm test`, `Searching
-  useAuth`: a file's name, never its path or contents; a command's first three words) as
+  useAuth`: a file's name, never its path or contents; a command's program and subcommand only, like `npm test`) as
   `herdr-app do sitandwatch.act-<terminal>-<base64url>`. One quick `herdr-app` run per tool call, in
   the background; it never blocks or fails Claude Code.
 
