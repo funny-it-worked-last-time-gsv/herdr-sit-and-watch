@@ -2,26 +2,17 @@
 
 ![Sit & Watch: your agents work. You watch from the armchair.](sitandwatch/media/card.png)
 
-**Sit & Watch** is the Herdr sidebar where your agents are little robots at their desks and you are the
-unhinged developer in the red armchair, getting progressively more unwell as they cook.
+Sit & Watch is the Herdr sidebar where your agents are little robots at their desks and you are the unhinged developer in the red armchair, getting progressively more unwell as they cook.  
+You sit in the corner with the popcorn and the foam finger while the commentary starts as a quiet “ooh” and ends with you face-down in the snacks wondering why you ever trusted machines.
 
-Your agents are cooking.  
-You are not.
+- One agent: quiet but lethal. You are already invested.
+- Two: “go on son”. Your soul has left your body.
+- Four: standing ovation, confetti, and the realisation that you have left the chat.
+- PR merged: KABOOM. You will not recover from this.
+- All of them need you at once: face down in the popcorn, questioning every life choice that led you here.
 
-Sit & Watch drops a little red armchair in the corner of Herdr. Every agent is a tiny robot at a desk.
-You are the developer in the chair with the popcorn, the foam finger, and the increasingly unhinged
-commentary.
-
-One agent: quiet but lethal.  
-Two: "go on son".  
-Four: standing ovation, confetti, and the realisation that you have left your body.  
-PR merged: KABOOM.  
-All of them need you at once: face down in the popcorn.
-
-The pets judge you. The power bar fills. The speech bubbles get worse. You cannot look away.
-
-Install it. Sit down. Lose the plot in the best possible way. No network. Just you, the chair, and
-the robots that are better at your job than you are.
+The pets judge you. The power bar fills. The speech bubbles get worse. You cannot look away and you do not want to.  
+Install it. Sit down. Lose the plot in the best possible way. No network. Just you, the chair, and the robots that are better at your job than you are.
 
 ![Are you sure? Yes](are-you-sure.png)
 
