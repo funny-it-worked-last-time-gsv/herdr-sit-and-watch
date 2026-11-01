@@ -1,4 +1,4 @@
-# SitAndWatch
+# Sit & Watch
 
 A pixel-art sidebar panel for the Herdr app. Every agent is a little robot at a desk, and below
 them a developer sits in a red velvet armchair in the corner, watching them work. The more agents
@@ -6,7 +6,7 @@ are working, the more worked up he gets: from an empty chair when nothing is run
 popcorn and a foam finger, to a standing ovation with confetti. He sobs when an agent needs you and
 sets off a party popper when one finishes.
 
-![SitAndWatch](preview.png)
+![Sit & Watch](preview.png)
 
 ## What you see
 
@@ -145,7 +145,7 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 
 ## Built from
 
-- `mods/sitandwatch/mod.json`: `{ "place": "left", "size": 280, "title": "SitAndWatch" }`.
+- `mods/sitandwatch/mod.json`: `{ "place": "left", "size": 280, "title": "Sit & Watch" }`.
 - `mods/sitandwatch/panel.js`: the panel (`panel(list, party, opts)`), desks, `devLevel(list)` and
   `resolveMood(m, level)`.
 - `mods/sitandwatch/lines.js`: what he says, `pool()` and `pickLine()`.

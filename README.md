@@ -7,7 +7,7 @@ desks. You are the developer in the red velvet armchair in the corner, watching 
 work. The more of them are working, the more excited you get. See
 [sitandwatch/RECIPE.md](sitandwatch/RECIPE.md) for how it is built.
 
-<img src="sitandwatch/demo.gif" width="270" alt="SitAndWatch demo mode cycling through every state">
+<img src="sitandwatch/demo.gif" width="270" alt="Sit &amp; Watch demo mode cycling through every state">
 
 ## What he does
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """PostToolUse hook (Bash): when a command actually ships something, set off the
-SitAndWatch explosion in the Herdr app. Never blocks or fails the tool call."""
+Sit & Watch explosion in the Herdr app. Never blocks or fails the tool call."""
 import json
 import re
 import shutil
