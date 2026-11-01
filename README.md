@@ -74,8 +74,9 @@ over 30), a message says why. Bring it back before removing the mod, or drag the
 
 Click **OPTS** in the panel's header, or run `herdr-app do sitandwatch.options`, for:
 
-- **Height:** 240, 300, 400 or 500px, or leave it to the layout. Remembered, and put back after a
-  restart. Also `herdr-app do sitandwatch.height-400` (or `height-layout`). Only in a column (the sidebar).
+- **Height:** 240, 300, 400 or 500px, or `layout` to give the block its size back. Remembered and
+  put back after a Herdr restart; a drag of the line above the panel still wins until then. Also
+  `herdr-app do sitandwatch.height-400` (or `height-layout`). Only in the sidebar (a column).
 - **Floor:** slate (the default; the orange and tan pets stand out on it), tan (the original), deep
   teal, sage or night navy.
 - **Pets:** switch Buddy, Snowy or Simba off. Their names and coats are the `PETS` table in

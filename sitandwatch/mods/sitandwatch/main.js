@@ -7,7 +7,7 @@ import { LINES } from "./lines.js";
 import { panel } from "./panel.js";
 import { spaceLabel, tabLabel, tabName } from "./names.js";
 import { spaceName, tabText } from "./privacy.js";
-import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, heightToApply, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting } from "./rules.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, planHeight, HEIGHT_TROUBLE, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -123,6 +123,7 @@ export default class Office extends View {
       // Background helpers (hc run --bg) aren't in agents(). Ask hc for them off the render path:
       // reading terminals() during render can stall on a slow remote machine and get the render cut off.
       this.helpers = [];
+      this.pollFails = 0;
       const poll = (cx) => cx.spawn(async () => {
         try {
           const out = await hc(["ls", "--all", "--json"]);
@@ -151,7 +152,11 @@ export default class Office extends View {
           const partyOver = this.partyUntil && Date.now() > this.partyUntil;
           if (partyOver) this.partyUntil = 0;
           if (key !== this.helpersKey || partyOver) { this.helpersKey = key; this.helpers = next; cx.notify(); }
-        } catch {} finally { this.polled = true; }   // tried once: unlisted waiters may go now, whether hc answered or not
+          this.polled = true;                                   // the helpers are known: unlisted waiters have left
+        } catch {
+          // A failed poll isn't proof anyone left; three in a row (hc broken) and agents() is all there is.
+          if (++this.pollFails >= 3) this.polled = true;
+        }
       });
       // What the mood is picked from (see trackMetrics); one-shots count down in ticks of the 1s timer.
       this.m = {
@@ -194,7 +199,7 @@ export default class Office extends View {
       this.subs = {};
       // minimised: { id, axis, saved (the size to restore), at, seen (what layout() said after) }, per copy
       const savedMin = (() => { try { return JSON.parse(localStorage.getItem("min") ?? "null"); } catch { return null; } })();
-      this.min = keepMin(savedMin, (() => { try { return findBlock(layout()); } catch { return null; } })());
+      this.min = keepMin(savedMin, (() => { try { return findBlock(layout()); } catch { return null; } })(), Date.now());
       if (savedMin && !this.min) try { localStorage.removeItem("min"); } catch {}
       // developer mode's pins; whether it's on is an option (shared, so the Options dialog sees it)
       this.dev = { mood: null, level: null };
@@ -320,16 +325,28 @@ export default class Office extends View {
   // (a restart puts the block back to the layout's size), and again whenever it's changed.
   heightTick(token) {
     try { if (localStorage.getItem(OWNER) !== token) return; } catch { return; }
+    const now = Date.now(), first = !this.heightTicked;
+    this.heightTicked = true;
+    if (now < (this.heightRetryAt ?? 0)) return;               // refused a moment ago: try again later
+    let b = null; try { b = findBlock(layout()); } catch {}
+    let saved = null; try { saved = JSON.parse(localStorage.getItem("height") ?? "null"); } catch {}
     const h = options().height;
-    if (!h) { this.heightApplied = null; return; }
-    let b; try { b = findBlock(layout()); } catch { return; }
-    const px = heightToApply(h, this.heightApplied, b, !!this.min);
-    if (b?.ok && b.axis === "column" && !this.min) this.heightApplied = h;   // applied, or already that size
-    if (!px) return;
-    // Herdr can refuse (a column that can't give it the room): say so once, like minimise does.
-    const refused = (e) => { try { notify({ title: "Sit & Watch", body: `Herdr refused to set my height to ${px}px${e ? `: ${e}` : ""}`, level: "warning" }); } catch {} };
+    const plan = planHeight({ height: h, saved, b, minimised: !!this.min, first });
+    const store = (v) => { try { v ? localStorage.setItem("height", JSON.stringify(v)) : localStorage.removeItem("height"); } catch {} };
+    if (JSON.stringify(plan.saved) !== JSON.stringify(saved)) store(plan.saved);
+    // Anything that stops it says so once per choice, like minimise; nothing fails silently.
+    const say = (why, detail) => {
+      const key = `${h}:${why}`;
+      if (this.heightWarned === key) return;
+      this.heightWarned = key;
+      try { notify({ title: "Sit & Watch", body: HEIGHT_TROUBLE[why] + (detail ? `: ${detail}` : ""), level: "warning" }); } catch {}
+    };
+    if (plan.warn) return say(plan.warn);
+    if (!plan.resize) return;
+    // Refused (now or later): forget it was set and retry in 30s, saying so once.
+    const refused = (e) => { store(saved); this.heightRetryAt = Date.now() + 30000; say("failed", e); };
     try {
-      const r = run("layout.resize", { id: b.id, px });
+      const r = run("layout.resize", { id: b.id, ...plan.resize });
       if (r?.error) refused(r.error);
       else if (typeof r?.then === "function") r.then((v) => { if (v?.error) refused(v.error); }, (e) => refused(e?.message ?? String(e)));
     } catch (e) { refused(e?.message ?? String(e)); }
