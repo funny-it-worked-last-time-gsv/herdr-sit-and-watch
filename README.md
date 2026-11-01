@@ -195,6 +195,9 @@ against screenshots of the live panel.
   `Run git push`, `> Review the diff`), and Options can turn the bubbles off.
 - **Commands say what they do** ([#11](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/11)). A command shows just its program (`git diff`, not
   `Run git diff`), and leading setup steps like `cd ~/proj &&` are skipped, so it names the real work.
+- **Ship only on main; pushes and PRs get their own reactions** ([#12](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/12)). Pushing a branch to
+  open a PR no longer says "IT'S LIVE": only a push to main ships. A branch push sends a paper plane,
+  and opening a PR has him hold up a scorecard reading the PR's number.
 
 ## Credits
 
