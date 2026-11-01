@@ -492,10 +492,10 @@ export function stance(level, o = {}) {
   const mode = mood === "finish" ? "pump" : mood === "blocked" && (fx.blockedPhone ?? 0) ? "phone" : gl ? "glazed" : mood;
   const L = mode === "burst" || mode === "streak" || mode === "power" ? 3
     : mode === "collapse" || mode === "error" || mode === "allBlocked" || mode === "longIdle" ? 0
-    : gl || mode === "multiBlocked" || mode === "pointAtBlocked" || mode === "areYouSure" ? 1
+    : gl || mode === "multiBlocked" || mode === "pointAtBlocked" || mode === "areYouSure" || mode === "pushOff" || mode === "prOpened" ? 1
     : panic ? Math.min(level, 1) : level;                // a blocked agent kills the mood
-  const present = L > 0 || panic || party || ship || ["collapse", "error", "welcome", "allBlocked", "longIdle"].includes(mode) || poke > 0;
-  const sad = panic && !["collapse", "burst", "streak", "areYouSure", "power"].includes(mode);
+  const present = L > 0 || panic || party || ship || ["collapse", "error", "welcome", "allBlocked", "longIdle", "pushOff", "prOpened"].includes(mode) || poke > 0;
+  const sad = panic && !["collapse", "burst", "streak", "areYouSure", "power", "pushOff", "prOpened"].includes(mode);
   const spilled = sad || mode === "error";               // popcorn on the floor
   return { depth, gl, mode, L, present, sad, spilled };
 }
@@ -507,6 +507,7 @@ export function spectator(level, s, id, opts) {
   // colour; linger: a second of confetti after the popper; poke/pokeLine: he was clicked;
   // idleTalk/idleN: in the long-idle doze, whether this 30s is one where he mumbles, and which line.
   const { seed = 0, chaos = false, tint = null, linger = false, poke = 0, pokeLine = "", idleTalk = false, idleN = 0 } = o;
+  const prNum = /^\d{1,6}$/.test(String(o.prNum ?? "")) ? String(o.prNum) : "";   // the PR just opened, for the scorecard
   const { finishPump = 0, blockedPhone = 0, collapse = 0 } = fx;
   const R = (x, y, w, h, c) => r(x * s, y * s, w * s, h * s, c);
   const { depth, gl, mode, L, present, sad, spilled } = stance(level, o);
@@ -590,7 +591,14 @@ export function spectator(level, s, id, opts) {
   else {
     // right hand: feeding (0-1), clapping (2), fist pump (3)
     if (pumpUp) parts.push(R(18, -4 - up, 3, 3, sk), R(18, -1 - up, 3, 8 + up, sh));   // fist in the air
-    else if (L <= 1) {
+    else if (mode === "pushOff") {
+      // arm out, a paper plane leaving his hand up and to the right
+      parts.push(R(17, 7, 3, 5, sh), R(19, 5, 3, 3, sk));
+      parts.push(div().absolute().left(20 * s).top(3 * s).w(4 * s).h(3 * s).id(`${id}-plane`)
+        .child(R(0, 1, 4, 1, "#ffffff")).child(R(1, 0, 2, 1, "#dfe6f0")).child(R(1, 2, 2, 1, "#c0c6cf"))
+        .loop("left", { from: 20 * s, to: 34 * s, period: 1400, easing: "linear" })
+        .loop("top", { from: 3 * s, to: -14 * s, period: 1400, easing: "linear" }));
+    } else if (L <= 1) {
       const feed = R(16, 14, 3, 5, sh).child(R(0, 3, 3, 2, sk)).id(`${id}-feed-${L}-${sad}-${mode}`);
       if (L === 1 && !sad && !gl && mode !== "pointAtBlocked")
         feed.loop("top", { from: 14 * s, to: 6 * s, period: mode === "fourthWall" ? 4000 : 2200 });
@@ -603,9 +611,19 @@ export function spectator(level, s, id, opts) {
     }
     // left hand: the foam finger, with a word on it
     const phoneOut = phoneK >= 0 && phoneK <= 2;
-    const finger = (L === 1 || L === 3 || mode === "welcome") && L !== 2 && !phoneOut;
+    const finger = (L === 1 || L === 3 || mode === "welcome") && L !== 2 && !phoneOut && mode !== "prOpened";
+    if (mode === "prOpened") {
+      // a scorecard up on a stick in his left hand, "PR #11", like the judges hold up; clear of his
+      // speech bubble, which sits over his right shoulder
+      const fs = Math.max(6, Math.round(s * 8 / 3));
+      parts.push(R(5, 7, 3, 5, sh), R(4, 4, 3, 3, sk), R(5, -2, 1, 7, CHAIR.wood));
+      parts.push(div().absolute().left(-1 * s).top(-9 * s).w(13 * s).h(8 * s).bg("#f4f4f0").border(2).border_color(ink)
+        .flex().flex_col().items_center().justify_center().id(`${id}-card`)
+        .child(txt("PR", fs, "#c9302c")).when(!!prNum, (e) => e.child(txt(`#${prNum}`, fs, ink)))
+        .loop("top", { from: -9 * s, to: -10 * s, period: 600 }));
+    }
     if (finger) {
-      const word = mode === "pointAtBlocked" ? ["THAT"] : mode === "welcome" ? ["hi"] : party || ship ? ["LIVE"] : L === 3 ? ["SHIP", "LADS"] : ["ooh"];
+      const word = mode === "pointAtBlocked" ? ["THAT"] : mode === "welcome" ? ["hi"] : mode === "pushOff" ? ["GO"] : party || ship ? ["LIVE"] : L === 3 ? ["SHIP", "LADS"] : ["ooh"];
       const fs = Math.max(6, Math.round(s * 8 / 3));
       const high = L === 3 || mode === "pointAtBlocked";
       const top = high ? -10 - up : -4;
@@ -660,6 +678,8 @@ export function spectator(level, s, id, opts) {
     : mode === "pointAtBlocked" ? (nm ? ["THAT one", `${nm}!`] : ["THAT one"])
     : mode === "phone" ? [blockedPhone > 2 ? "they need me?!" : blockedPhone > 1 ? "noooo" : "on my way..."]
     : mode === "welcome" ? (nm ? ["welcome", `hi ${nm}`] : ["welcome"])
+    : mode === "pushOff" ? pool("push", seed)
+    : mode === "prOpened" ? (prNum ? [`PR #${prNum}!`, ...pool("pr", seed)] : pool("pr", seed))
     : depth === 3 ? ["I have a life too", "zzz", "still going..."]
     : depth === 2 ? ["I have a life too", "hmm"]
     : gl ? ["still going...", "hmm", "you good?"]
@@ -671,7 +691,7 @@ export function spectator(level, s, id, opts) {
     : flavour === "mixed" ? [...levelLines, "the whole team's in"]
     : levelLines;
   const period = gl || melt ? 8000 : mode === "fourthWall" || mode === "lateNight" || mode === "howMany" ? 3000
-    : L === 3 && chaos ? 500 : sad ? 1400 : party || ship || mode === "pump" ? 900 : mode === "burst" || mode === "error" || mode === "streak" || mode === "power" ? 700
+    : L === 3 && chaos ? 500 : sad ? 1400 : party || ship || mode === "pump" || mode === "pushOff" || mode === "prOpened" ? 900 : mode === "burst" || mode === "error" || mode === "streak" || mode === "power" ? 700
     : [2400, 1600, 1400, 1000][L];
   const alarm = (sad && mode !== "pointAtBlocked") || mode === "error";
   const say = div().absolute().left(16 * s).top((-9 - up) * s).px(4).py(2).bg("#ffffff").border(2).border_color(ink)

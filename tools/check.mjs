@@ -1129,9 +1129,11 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
 // ---- the ship hook: what counts as shipping ---------------------------------------------------
 {
   // Value: protects=the PostToolUse ship hook sending ship-merged/-deployed/-pushed for gh pr merge, vercel --prod and
-  //   git push, anywhere in a compound command, the biggest kind winning; a dry run (git push -n/--dry-run/-fn) not
-  //   counting, while a `grep -n` elsewhere in the command doesn't cancel a real push; fails_when=a ship is missed in a
-  //   compound command, a dry run explodes, or an unrelated -n hides a push; why_new=no check covered the hook, and the
+  //   a git push that updates the main branch, anywhere in a compound command, the biggest kind winning; a feature-branch
+  //   push sending the smaller "push" and gh pr create "pr-<number>" (from the URL in its output); a delete, tags alone
+  //   or a dry run (git push -n/--dry-run/-fn) sending nothing, while a `grep -n`
+  //   elsewhere in the command doesn't cancel a real push; git's own options (-c, -C) and a `cd` step read like the shell;
+  //   fails_when=a ship is missed, a feature-branch push or a dry run explodes, or an unrelated -n hides a push; why_new=no check covered the hook, and the
   //   old whole-command -n test missed real pushes; seam=none (a stand-in herdr-app on PATH); no_claim=Claude Code firing
   //   PostToolUse in a real session
   const { mkdtempSync, writeFileSync: wf, readFileSync: rf, chmodSync, existsSync, rmSync } = await import("node:fs");
@@ -1140,21 +1142,61 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   const dir = mkdtempSync(join(tmpdir(), "saw-ship-")), out = join(dir, "sent");
   wf(join(dir, "herdr-app"), `#!/bin/sh\necho "$@" >> "${out}"\n`); chmodSync(join(dir, "herdr-app"), 0o755);
   const hook = join(here, "..", "sitandwatch", "hooks", "sitandwatch-ship.py");
+  // Two throwaway repos: one on main, one on a feature branch. A push only ships when it updates main
+  // (or master, or origin/HEAD's branch); pushing a feature branch, say to open a PR, doesn't.
+  const onMain = join(dir, "onmain"), onFeature = join(dir, "onfeature");
+  spawnSync("git", ["init", "-q", "-b", "main", onMain]); spawnSync("git", ["init", "-q", "-b", "feature", onFeature]);
   const cases = [
-    ["git push -u origin feature", "ship-pushed"],
-    ["gh pr view 7 && gh pr merge 7 --rebase --delete-branch | tail -1", "ship-merged"],
-    ["git status | grep -n x && git push", "ship-pushed"],
-    ["git push && vercel --prod", "ship-deployed"],
-    ["git push -n", null], ["git push --dry-run origin", null], ["git push -fn origin", null],
-    ["git log -n 3", null], ["echo git pushx", null], ["vercel", null],
+    ["git push -u origin feature", onMain, "push"],                       // a feature branch: the small push, not live
+    ["git push -u origin HEAD", onFeature, "push"], ["git push", onFeature, "push"],
+    ["git push", onMain, "ship-pushed"], ["git push -u origin HEAD", onMain, "ship-pushed"],
+    ["git push origin main", onFeature, "ship-pushed"], ["git push origin HEAD:main", onFeature, "ship-pushed"],
+    [`cd ${onMain} && git push`, onFeature, "ship-pushed"], [`git -C ${onMain} push`, onFeature, "ship-pushed"],
+    ["git -c credential.helper= -c credential.helper='!gh auth git-credential' push -q origin main 2>&1 | tail -1", onFeature, "ship-pushed"],
+    ["git push origin --delete main", onMain, null], ["git push origin :main", onMain, null], ["git push --tags", onMain, null],
+    ["gh pr view 7 && gh pr merge 7 --rebase --delete-branch | tail -1", onFeature, "ship-merged"],
+    ["gh pr create --base main", onMain, "pr"],                            // no URL in the output: no number
+    ["git push -u origin feature 2>&1 | tail -1; gh pr create --fill", onMain, "pr-11", { stdout: "https://github.com/o/r/pull/11\n" }],   // the PR beats its push
+    ["git status | grep -n x && git push", onMain, "ship-pushed"],
+    ["git push && vercel --prod", onFeature, "ship-deployed"],
+    ["git push -n", onMain, null], ["git push --dry-run origin", onMain, null], ["git push -fn origin main", onMain, null],
+    ["git log -n 3", onMain, null], ["git log --grep push", onMain, null], ["echo git push", onMain, null], ["echo git pushx", onMain, null], ["vercel", onMain, null],
   ];
-  const got = cases.map(([command]) => {
+  const got = cases.map(([command, cwd, , tool_response]) => {
     rmSync(out, { force: true });
-    spawnSync("python3", [hook], { input: JSON.stringify({ hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command } }), env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } });
+    spawnSync("python3", [hook], { input: JSON.stringify({ hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command }, cwd, ...(tool_response ? { tool_response } : {}) }), env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } });
     return existsSync(out) ? rf(out, "utf8").trim().replace(/^do sitandwatch\./, "") : null;
   });
-  cases.forEach(([command, want], k) => { if (got[k] !== want) fails.push(`ship hook: "${command}" should send ${want}, got ${got[k]}`); });
+  cases.forEach(([command, cwd, want], k) => { if (got[k] !== want) fails.push(`ship hook: "${command}" in ${cwd === onMain ? "main" : "feature"} should send ${want}, got ${got[k]}`); });
   rmSync(dir, { recursive: true, force: true });
+}
+
+// ---- the smaller events: a branch pushed, a PR opened ----------------------------------------------
+{
+  // Value: protects=`sitandwatch.push` and `sitandwatch.pr-<n>` (from the ship hook) starting their one-shots: a paper
+  //   plane and "pushed!"-style lines for a push, a scorecard reading PR #<n> and "PR #<n>!" for a new PR; a bad number
+  //   ignored; fails_when=the commands stop starting them, the number stops reaching the card, or junk gets through;
+  //   why_new=new feature; seam=none; no_claim=Claude Code firing the hook (checked live)
+  await S.settle(); S.dropCommandWaiters();
+  const { o } = mount();
+  const send = async (c) => { S.sendCommand(c); await S.settle(); await S.settle(); };
+  world.agents = [{ address: "t8", status: "working", tab_name: "build", title: "x", program: null, focused: false }];
+  const texts = (t) => { const v = []; walk(t, (k) => { if (k.text != null) v.push(k.text); }); return v; };
+  const has = (t, idv) => { let f = false; walk(t, (k) => { if (k.idv === idv) f = true; }); return f; };
+  await send("push");
+  let t = o.render();
+  if (o.m.pushOff !== 3 || !has(t, "pdev-plane")) fails.push(`events: "push" should start the push (3 ticks, a paper plane), got ${o.m.pushOff} plane=${has(t, "pdev-plane")}`);
+  await send("pr-11");
+  t = o.render();
+  if (o.m.prOpened !== 4 || o.m.prNum !== "11" || !has(t, "pdev-card")) fails.push(`events: "pr-11" should start the PR (4 ticks, #11, a scorecard), got ${o.m.prOpened} #${o.m.prNum} card=${has(t, "pdev-card")}`);
+  if (!texts(t).includes("#11") || !texts(t).includes("PR #11!")) fails.push(`events: the card and his line should say #11 / PR #11!, got ${JSON.stringify(texts(t).filter((x) => /PR|#/.test(x)))}`);
+  o.m.prOpened = 0; o.m.prNum = null;
+  await send("pr-abc"); await send("pr-1234567");
+  if (o.m.prOpened || o.m.prNum) fails.push(`events: "pr-abc" and a 7-digit number should be ignored, got ${o.m.prOpened} #${o.m.prNum}`);
+  await send("pr");
+  t = o.render();
+  if (o.m.prOpened !== 4 || o.m.prNum !== null || !texts(t).includes("PR")) fails.push(`events: "pr" alone should start the PR with no number, got ${o.m.prOpened} #${o.m.prNum}`);
+  world.agents = [];
 }
 
 // ---- real activity: the PreToolUse hook → the desk's bubble ------------------------------------------

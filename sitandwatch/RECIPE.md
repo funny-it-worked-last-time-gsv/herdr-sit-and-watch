@@ -85,6 +85,8 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 | `error` | an agent we showed exited with code > 0 (4 ticks) | hands on head, eyes squeezed, grimace, sweat, popcorn spilled, small shake | `oh no`, `that's not good` |
 | `collapse` | 2+ working dropped to none (5 ticks) | see below | `ahh`, `job done` |
 | `finish` | working to done (3 ticks) | the fist pump below | `GET IN!` |
+| `prOpened` | `sitandwatch.pr-<n>` or `pr` from the ship hook (4 ticks) | seated; a scorecard on a stick in his left hand (`PR` and `#<n>`, bobbing), clear of the bubble | `PR #<n>!`, then the pr pool |
+| `pushOff` | `sitandwatch.push` from the ship hook (3 ticks) | seated; right arm out, a paper plane flying up and right off it; `GO` on the foam finger | push pool |
 | `allBlocked` | 2+ blocked and none working | face down (hair over the face), two tears, popcorn all over the rug | meltdown pool |
 | `multiBlocked` | 2+ blocked | both hands up, head whipping left and right | `which one?!`, `too many` |
 | `pointAtBlocked` | one blocked 2+ min | half out of the chair, foam finger up reading `THAT`, red arrow at that desk | `THAT one`, `<tab>!` |
@@ -437,7 +439,21 @@ add to `~/.claude/settings.json`:
 ]
 ```
 
-`is_ship()` in the script decides what counts as shipping.
+The same hook sends the smaller events: a push to any other branch sends `sitandwatch.push`, and
+`gh pr create` sends `sitandwatch.pr-<n>` with the number from the PR URL in its output
+(`tool_response`), or `sitandwatch.pr` without one. One command, one event, the biggest: PR merged >
+deployed > pushed to main > PR opened > branch pushed (opening a PR usually pushes its branch first).
+The panel takes `pr-<n>` only with 1 to 6 digits.
+
+`is_ship()` in the script decides what counts as shipping: `gh pr merge` (PR MERGED), a production
+`vercel` deploy (DEPLOYED), and a `git push` that updates the main branch (IT'S LIVE). Main is `main`,
+`master`, or the branch `origin/HEAD` points to. Pushing a feature branch, say to open a PR, isn't
+shipping. `git_push()` reads each step like the shell (quotes kept together), skips git's own options
+(`-c`, and `-C <dir>`, which moves the folder) and needs `git` to be the command, not an `echo`.
+`push_targets()` finds the branches a push updates: the named ones (`main`, `HEAD:main`,
+`refs/heads/main`), else the current branch (`git symbolic-ref`, in the session's `cwd` from the hook
+input, moved by any `cd <dir>` step earlier in the command). A dry run, a delete (`--delete`, `:main`)
+or tags alone update nothing.
 
 ## Activity hook
 

@@ -28,6 +28,8 @@ Each of these is one state of the demo tour (`herdr-app do sitandwatch.demo-<n>`
 | Two or three | Clapping, wide eyes, sweating. "go on son!" |
 | Four or more (or all of them) | Standing ovation, bulging eyes, confetti. "SHIP IT!" |
 | One just finished | Party popper and a fist pump, popcorn flying. "GET IN!" |
+| A branch pushed | A paper plane off his hand, `GO` on the foam finger. "pushed!" (needs the Claude Code hook, see below) |
+| A PR opened | Holds up a scorecard reading `PR #11`, like the judges. "PR #11!" ... "who's reviewing?" (the hook again) |
 | One needs you | Spilled popcorn, a tear, a phone call. "they need me?!" ... "on my way..." |
 | Two or more need you | Both hands up, head whipping between desks. "which one?!" |
 | They all need you, nobody's working | Face down, popcorn everywhere, two tears. "WHY DO I EVEN HAVE AGENTS" |
@@ -133,7 +135,7 @@ Ask your agent to add this mod (it reads every file first), or by hand:
 
 Three optional Claude Code hooks live in `sitandwatch/hooks/`:
 
-- **Ship:** the explosion on `git push`, `gh pr merge` or a production `vercel` deploy (setup in
+- **Ship:** the explosion on a `git push` to your main branch, `gh pr merge` or a production `vercel` deploy (setup in
   [RECIPE.md](sitandwatch/RECIPE.md#ship-hook)).
 - **Sub-agents:** the `2/5` count. Copy `sitandwatch-subagents.py` to `~/.claude/hooks/` and add it to
   `~/.claude/settings.json` for both events:

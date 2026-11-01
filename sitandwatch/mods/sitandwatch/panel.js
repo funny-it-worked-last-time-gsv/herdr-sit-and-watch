@@ -171,7 +171,7 @@ export function panel(list, party = false, opts = {}) {
     panic, party, ship: ship != null, firstShip: !!opts.firstShip, mood, fx: m?.fx, name,
     provider: provider(list), night: isNight(m?.hour ?? new Date().getHours()) || mood === "lateNight",
     seed: m?.seed ?? 0, chaos: !!m?.chaos || (m?.working ?? 0) >= 6, tint: dominantTint(list),
-    linger: (m?.fx?.linger ?? 0) > 0, poke: m?.fx?.poke ?? 0, pokeLine: m?.pokeLine ?? "",
+    linger: (m?.fx?.linger ?? 0) > 0, poke: m?.fx?.poke ?? 0, pokeLine: m?.pokeLine ?? "", prNum: m?.prNum ?? null,
     idleTalk: m?.idleTalk ?? Math.floor(Date.now() / 30000) % 6 === 0, idleN: Math.floor(Date.now() / 180000),
   };
   // The pets react to what he's doing; developer mode can force a scene; Options can send one away.

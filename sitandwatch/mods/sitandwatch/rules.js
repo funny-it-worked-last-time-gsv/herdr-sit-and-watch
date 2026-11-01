@@ -19,6 +19,8 @@ export const ONE_SHOT = {
   streak: { chip: "streak", ticks: 4, takesOver: true },
   errorWince: { chip: "error", ticks: 4, takesOver: true },
   newAgentWelcome: { chip: "welcome", ticks: 3, takesOver: true },
+  pushOff: { chip: "push", ticks: 3, takesOver: true },        // a branch pushed (not main: that's the explosion)
+  prOpened: { chip: "pr", ticks: 4, takesOver: true },         // gh pr create: he holds up the scorecard
   levelUp: { chip: "levelUp", ticks: 2, takesOver: false },
   linger: { chip: "linger", ticks: 2, takesOver: false },
   poke: { chip: "poke", ticks: 2, takesOver: false },
@@ -59,6 +61,8 @@ export function resolveMood(m, level) {
   if (fx.errorWince > 0) return "error";
   if (fx.collapse > 0) return "collapse";
   if (fx.finishPump > 0) return "finish";
+  if (fx.prOpened > 0) return "prOpened";               // like a finish: something of yours went out
+  if (fx.pushOff > 0) return "pushOff";
   if (m.blocked >= 2 && m.working === 0) return "allBlocked";
   if (m.blocked >= 2) return "multiBlocked";
   if (m.blocked >= 1 && m.longestBlockedMs > 2 * MIN) return "pointAtBlocked";

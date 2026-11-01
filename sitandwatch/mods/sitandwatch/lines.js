@@ -92,6 +92,14 @@ export const LINES = {
     "zzz", "five more minutes", "mmf", "not now", "it's my chair now"
   ],
   // clicking him
+  push: [
+    "pushed!", "off it goes", "whoosh", "up it goes", "safe on the remote", "sent upstairs",
+    "there it goes", "backed up"
+  ],
+  pr: [
+    "PR's up!", "review time", "eyes on this one", "fresh PR", "who's reviewing?", "open for business",
+    "ready for a look", "be gentle"
+  ],
   poke: [
     "you seeing this?", "the work is working", "I'm sat", "shh, I'm watching", "best seat in the house",
     "don't block my view", "this is my show", "pass the popcorn", "aha!",
@@ -101,7 +109,7 @@ export const LINES = {
 };
 
 // The original lines go first so a fresh session still opens with his old voice.
-const FIRST = { level1: "ooh", level2: "go on son!", level3: "SHIP IT!", finish: "GET IN!", blocked: "wah wah", ship: "KABOOM!" };
+const FIRST = { level1: "ooh", level2: "go on son!", level3: "SHIP IT!", finish: "GET IN!", blocked: "wah wah", ship: "KABOOM!", push: "pushed!", pr: "PR's up!" };
 
 export function pool(name, seed = 0) {
   const list = LINES[name] ?? [];
