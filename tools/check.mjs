@@ -252,7 +252,8 @@ if (process.argv.includes("--capture")) {
 }
 
 const g = JSON.parse(readFileSync(GOLDEN, "utf8"));
-const fails = errs.map((e) => `ERR panel: ${e}`);   // first: a swallowed render error matters most
+const fails = [];
+// ERR panels are collected at the end (below): the behaviour checks' noErr calls come after this line.
 const diffMap = (name, a, b) => { for (const k of Object.keys(b)) if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) fails.push(`${name} ${k}: was ${JSON.stringify(b[k])}, now ${JSON.stringify(a[k])}`); };
 const deref = (o) => Object.fromEntries(Object.entries(o).map(([k, i]) => [k, g.obs[i]]));
 diffMap("mood", snap.moods, deref(g.moods));
@@ -1544,6 +1545,7 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   world.layout = null; world.runs = [];
 }
 
+fails.unshift(...errs.map((e) => `ERR panel: ${e}`));   // first: a swallowed render error matters most
 const budget = g.budget.max + BUDGET_HEADROOM, over = snap.demo.counts.map((n, i) => [i + 1, n]).filter(([, n]) => n > budget);
 for (const [i, n] of over) fails.push(`demo state ${i}: ${n} elements, budget ${budget}`);
 

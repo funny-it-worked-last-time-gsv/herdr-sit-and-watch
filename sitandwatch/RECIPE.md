@@ -304,7 +304,7 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   `HC_TERMINAL_ID`, ids cut to letters and digits. Anything missing, it sends nothing; every error is
   swallowed. Herdr's `herdr-app ls` lists `sub_agents` per terminal, but mods can't read it.
 - `parseSubCommand()` reads them; `this.subs = { id: { parent, at, doneAt } }` (a stop for an unknown
-  id is ignored). `pruneSubs()` treats a parent's sub-agents as one batch: kept while any runs, all
+  id leaves a hidden tombstone, see below). `pruneSubs()` treats a parent's sub-agents as one batch: kept while any runs, all
   dropped 8s (`SUB_DONE_MS`) after the last stops; one never stopped (Esc, a killed session) goes after an
   hour (`SUB_TTL_MS`; real ones run well past 15 minutes). Kept in localStorage (`subs`, written only by
   the copy that owns the commands) across reloads, so a stop for one running before still lands. A stop
