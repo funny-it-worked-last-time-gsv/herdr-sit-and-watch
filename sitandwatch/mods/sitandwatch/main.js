@@ -208,7 +208,7 @@ export default class Office extends View {
       // so it would take commands and change a view nobody sees. The newest panel claims the
       // commands; an older loop that gets one hands it on and stops. localStorage, not setShared:
       // setting shared state re-renders every mod, and doing that from init loops the window.
-      const token = Math.random().toString(36).slice(2);
+      const token = (this.token = Math.random().toString(36).slice(2));
       try { localStorage.setItem(OWNER, token); } catch {}
       cx.spawn(async (cx) => {
         for (;;) {
@@ -276,7 +276,7 @@ export default class Office extends View {
     };
     if (this.min) {                                          // back to the size it had
       const was = this.min;
-      this.setMin(null);
+      this.setMin(null); this.restoredAt = Date.now();      // heightTick waits while Herdr catches up
       resize({ id: was.id, ...(was.saved ?? { weight: 1 }) }, () => this.setMin(was));
     } else {
       let b;
@@ -331,9 +331,10 @@ export default class Office extends View {
     if (now < (this.heightRetryAt ?? 0) && this.heightRetryFor === h) return;
     let b = null; try { b = findBlock(layout()); } catch {}
     let saved = null; try { saved = JSON.parse(localStorage.getItem("height") ?? "null"); } catch {}
-    const plan = planHeight({ height: h, saved, b, minimised: !!this.min, first });
-    // the first look counts once there's a block to look at and it isn't minimised (a restart's re-apply waits for that)
-    if (b && (b.ok || b.reason === "min") && !this.min) this.heightTicked = true;
+    const settling = now - (this.restoredAt ?? 0) <= MIN_GUARD_MS;
+    const plan = planHeight({ height: h, saved, b, minimised: !!this.min, first, settling });
+    // the first look counts once there's a settled, unminimised block to look at (a restart's re-apply waits for that)
+    if (b && (b.ok || b.reason === "min") && !this.min && !settling) this.heightTicked = true;
     const store = (v) => { try { v ? localStorage.setItem("height", JSON.stringify(v)) : localStorage.removeItem("height"); } catch {} };
     if (JSON.stringify(plan.saved) !== JSON.stringify(saved)) store(plan.saved);
     // Anything that stops it says so once per choice, like minimise; nothing fails silently.
@@ -346,11 +347,10 @@ export default class Office extends View {
     if (plan.warn) return say(plan.warn);
     if (!plan.resize) return;
     // Refused (now or later): forget it was set and retry in 30s, saying so once.
-    const wrote = JSON.stringify(plan.saved);
+    const seq = (this.heightSeq = (this.heightSeq ?? 0) + 1);
     const refused = (e) => {
-      // roll back only what this resize wrote (a newer choice since stays); look again as if fresh
-      let cur = null; try { cur = localStorage.getItem("height"); } catch {}
-      if ((cur ?? "null") === wrote) store(saved);
+      if (seq !== this.heightSeq) return;                   // a newer resize since: this refusal is old news
+      store(saved);                                         // forget it was set; look again as if fresh
       this.heightRetryAt = Date.now() + 30000; this.heightRetryFor = h; this.heightTicked = false;
       say("failed", e);
     };
@@ -373,7 +373,8 @@ export default class Office extends View {
     this.saveSubs();
     cx.notify();
   }
-  saveSubs() { try { localStorage.setItem("subs", JSON.stringify(this.subs)); } catch {} }
+  // Only the copy that owns the commands (and so gets every sub event) writes them down.
+  saveSubs() { try { if (localStorage.getItem(OWNER) === this.token) localStorage.setItem("subs", JSON.stringify(this.subs)); } catch {} }
 
   // A pet was clicked (or the dev petPoke fired): its bubble for two ticks, a line from its pool
   // ("asleep" while it's curled on the chair).

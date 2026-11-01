@@ -1089,15 +1089,15 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (!o.subs.zzz999?.tomb || badge(t) != null) fails.push(`subs: a stop for an unknown sub-agent should leave only a hidden tombstone, got ${JSON.stringify(o.subs.zzz999)} badge ${badge(t)}`);
   await send("sub-start-a0-zzz999"); t = render(o, ["idle", "idle"]);
   if (badge(t) != null || o.subs.zzz999?.doneAt == null) fails.push("subs: a start arriving after its stop shouldn't make a working ghost");
-  S.advance(9000);
-  if (o.subs.zzz999) fails.push("subs: a tombstone should go 8s later");
+  S.advance(31000);
+  if (o.subs.zzz999) fails.push("subs: a tombstone should go 30s later");
   // Running sub-agents survive a reload, so their stop still lands.
   await send("sub-start-a0-ccc333");
-  // A stop that never comes: forgotten after 15 minutes, not an hour.
-  jump(14 * MIN); S.advance(1000); t = render(o, ["idle", "idle"]);
-  if (badge(t) == null) fails.push("subs: a running sub-agent should still show at 14 minutes");
-  jump(2 * MIN); S.advance(1000); t = render(o, ["idle", "idle"]);
-  if (badge(t) != null) fails.push("subs: a sub-agent never stopped should go after 15 minutes");
+  // A stop that never comes: forgotten after an hour (real ones run well past 15 minutes, so not sooner).
+  jump(30 * MIN); S.advance(1000); t = render(o, ["idle", "idle"]);
+  if (badge(t) == null) fails.push("subs: a running sub-agent should still show at 30 minutes");
+  jump(31 * MIN); S.advance(1000); t = render(o, ["idle", "idle"]);
+  if (badge(t) != null) fails.push("subs: a sub-agent never stopped should go after an hour");
   await send("sub-start-a1-ddd444"); t = render(o, ["idle", "idle"]);
   if (ids(t).filter((x) => /^pd-/.test(x)).join(",") !== "pd-a1,pd-a0") fails.push("subs: a desk with sub-agents running counts as active (moves to the front)");
   // (last: the new copy takes the commands) Running sub-agents survive a reload, so their stop still lands.
@@ -1326,14 +1326,15 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   // Value: protects=a fresh finish time after done→working→done between polls; a restart's height re-apply retried after a
   //   refusal; a refused "layout" restore rolled back and retried; a new choice not held up by an old refusal's wait; a late
   //   refusal not undoing a newer choice; no planning while the block still reads strip-sized; keepMin trusting the size seen
-  //   after the shrink; a stopped sub-agent staying stopped on a late start; fails_when=any of those rules is reverted;
+  //   after the shrink (reverted: only an open block drops it); only the owning copy saving sub-agents; fails_when=any of those rules is reverted;
   //   why_new=found by the ship's batched specialist and red team (run 2); seam=none; no_claim=Herdr's real resize timing
   const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
   const mn = { id: "sitandwatch", axis: "column", saved: { px: 300 }, at: 0, seen: 300 }, blk = (px) => ({ ok: true, id: "sitandwatch", axis: "column", size: { px } });
-  if (!R.keepMin(mn, blk(300), 1e9)) fails.push("fixes2: keepMin should keep a strip whose block still reads the size seen after the shrink");
   if (R.keepMin({ ...mn, seen: 30 }, blk(300), 1e9)) fails.push("fixes2: keepMin should drop a strip whose block reads open (not what was seen)");
-  const strip = R.planHeight({ height: 400, saved: null, b: blk(30), minimised: false, first: false });
-  if (strip.resize || strip.saved) fails.push(`fixes2: planHeight should wait while the block reads strip-sized, got ${JSON.stringify(strip)}`);
+  const strip = R.planHeight({ height: 400, saved: null, b: blk(30), minimised: false, first: false, settling: true });
+  if (strip.resize || strip.saved) fails.push(`fixes2: planHeight should wait while just restored (settling), got ${JSON.stringify(strip)}`);
+  const small = R.planHeight({ height: 400, saved: null, b: blk(120), minimised: false, first: false });
+  if (JSON.stringify(small.resize) !== '{"px":400}') fails.push(`fixes2: a small but open block (dragged) should still take a height, got ${JSON.stringify(small)}`);
 
   // done → working → done between two polls: the second finish is fresh, not the first one hc gave.
   S.dropCommandWaiters();
@@ -1347,10 +1348,16 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (!(o.waiting?.a0 > t1 + 60 * MIN)) fails.push(`fixes2: a second finish between polls should be fresh, got ${o.waiting?.a0} (first was ${t1})`);
   world.hcLs = { terminals: [] }; world.hcGet = {};
 
-  // A stopped sub-agent stays stopped when a late start arrives.
-  o.subEvent({ verb: "start", parent: "a0", id: "late1" }, makeCx()); o.subEvent({ verb: "stop", parent: "a0", id: "late1" }, makeCx());
-  const done1 = o.subs.late1?.doneAt; o.subEvent({ verb: "start", parent: "a0", id: "late1" }, makeCx());
-  if (o.subs.late1?.doneAt !== done1) fails.push("fixes2: a start after a stop shouldn't revive a sub-agent");
+  // A tombstone doesn't stretch a finished batch: its own clock (30s), not the batch's.
+  const pt = R.pruneSubs({ d1: { parent: "p", at: 0, doneAt: 100 }, t1: { parent: "p", at: 7000, doneAt: 7000, tomb: true } }, 9000);
+  if (Object.keys(pt).join() !== "t1") fails.push(`fixes2: a tombstone shouldn't keep a finished batch on screen, kept ${Object.keys(pt)}`);
+  // Only the copy that owns the commands writes sub-agents down (an old copy's stale map mustn't overwrite them).
+  localStorage.removeItem("subs");
+  const other = new Office(); other.init(world.props, makeCx());      // the newest copy owns the commands now
+  o.subEvent({ verb: "start", parent: "a0", id: "stale1" }, makeCx());
+  if (localStorage.getItem("subs")?.includes("stale1")) fails.push("fixes2: a copy that doesn't own the commands shouldn't save sub-agents");
+  other.subEvent({ verb: "start", parent: "a0", id: "own1" }, makeCx());
+  if (!localStorage.getItem("subs")?.includes("own1")) fails.push("fixes2: the owning copy should save sub-agents");
 
   // Height: a restart's re-apply refused, then retried.
   const lay = (px) => ({ id: "root", type: "row", children: [{ id: "sidebar", type: "column", children: [{ id: "sitandwatch", type: "block", content: { mod: "sitandwatch" }, size: { px } }] }] });
@@ -1389,6 +1396,22 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   reject?.(new Error("late")); await S.settle(); await S.settle();
   let hl = null; try { hl = JSON.parse(localStorage.getItem("height")); } catch {}
   if (hl?.h !== 300) fails.push(`fixes2: a late refusal shouldn't undo a newer choice, height=${JSON.stringify(hl)}`);
+  // ABA: 400 refused late, after 300 then 400 again went through: the newer 400 (and its old size) stay.
+  world.layout = lay(250); localStorage.removeItem("height"); world.runs = [];
+  let rejectA; world.runResult = () => new Promise((_, rj) => { rejectA = rj; });
+  world.shared[OPTKEY] = { height: 400 }; S.advance(1000);
+  world.runResult = null; world.shared[OPTKEY] = { height: 300 }; S.advance(1000);
+  world.layout = lay(300); world.shared[OPTKEY] = { height: 400 }; S.advance(1000);
+  rejectA?.(new Error("late")); await S.settle(); await S.settle();
+  let ha = null; try { ha = JSON.parse(localStorage.getItem("height")); } catch {}
+  if (ha?.h !== 400 || ha?.from?.px !== 250) fails.push(`fixes2: an old refusal shouldn't roll back a newer identical choice, height=${JSON.stringify(ha)}`);
+  // A restart's re-apply isn't used up while the block is settling after a restore.
+  localStorage.setItem("height", JSON.stringify({ id: "sitandwatch", h: 400, from: { px: 300 } }));
+  world.layout = lay(300); world.shared[OPTKEY] = { height: 400 };
+  const h4 = new Office(); h4.init(world.props, makeCx()); h4.restoredAt = clock.now; world.runs = []; S.advance(1000);
+  if (sized().length) fails.push(`fixes2: nothing should be resized while settling, got ${sized()}`);
+  S.advance(4000);
+  if (!sized().includes('{"id":"sitandwatch","px":400}')) fails.push(`fixes2: the restart's re-apply should run once settled, got ${sized()}`);
   world.layout = null; world.runs = []; world.shared[OPTKEY] = {};
 }
 
