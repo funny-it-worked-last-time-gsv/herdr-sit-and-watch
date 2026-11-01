@@ -435,6 +435,25 @@ add to `~/.claude/settings.json`:
 
 `is_ship()` in the script decides what counts as shipping.
 
+## Activity hook
+
+`hooks/sitandwatch-activity.py` is a Claude Code `PreToolUse` hook (async). `describe()` turns the
+tool call into a phrase: Read/Edit/Write → `Reading|Editing <file name>`, Bash → `Running <first 3
+words>`, Grep → `Searching <pattern>`, Glob → `Looking for <pattern>`, Task/Agent → `Delegating:
+<description>`, WebFetch/WebSearch, TodoWrite → `Planning`, else the tool name. `phrase()` keeps
+printable ASCII on one line, at most 40 characters (cut at a word, `...`). It sends `herdr-app do
+sitandwatch.act-<HC_TERMINAL_ID>-<phrase in base64url, no padding>`; outside Herdr, or for another
+event, nothing. Install:
+
+```json
+"PreToolUse": [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/sitandwatch-activity.py", "async": true, "timeout": 10 }] }]
+```
+
+In the mod, `parseActCommand()` decodes it (refusing anything not letters/digits/`-`/`_`, over 80, or
+not printable ASCII once decoded) into `this.acts[terminal] = { text, at }`. A desk's bubble says
+`freshAct()` (under `ACT_FRESH_MS`, a minute) before its title, both through `tabLabel` (screenshot
+mode) and `sayText()` (20 characters).
+
 ## Sub-agent hook
 
 `hooks/sitandwatch-subagents.py` is a Claude Code `SubagentStart`/`SubagentStop` hook. Copy it to

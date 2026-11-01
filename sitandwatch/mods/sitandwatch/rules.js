@@ -372,3 +372,26 @@ export function sayText(title, turn) {
   const cut = s.slice(0, 20), space = cut.lastIndexOf(" ");   // whole words where it can
   return (space >= 8 ? cut.slice(0, space) : cut.slice(0, 19)) + "…";
 }
+
+// ---- what each session is really doing (the activity hook) ---------------------------------------
+// `act-<terminal>-<text>`: the PreToolUse hook's phrase ("Editing main.js") in base64url. Returns
+// { term, text } or null (anything malformed, or not printable ASCII).
+const B64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+export function b64urlDecode(s) {
+  let bits = 0, n = 0, out = "";
+  for (const ch of String(s)) {
+    const v = B64URL.indexOf(ch);
+    if (v < 0) return null;
+    bits = ((bits << 6) | v) & 0xffffff; n += 6;
+    if (n >= 8) { n -= 8; out += String.fromCharCode((bits >> n) & 255); }
+  }
+  return out;
+}
+export function parseActCommand(c) {
+  const m = /^act-([A-Za-z0-9]+)-([A-Za-z0-9_-]{1,80})$/.exec(c ?? "");
+  const text = m ? b64urlDecode(m[2]) : null;
+  return text && /^[\x20-\x7e]+$/.test(text) ? { term: m[1], text: text.trim() } : null;
+}
+// A desk's bubble says its latest activity while that's under a minute old, else its title.
+export const ACT_FRESH_MS = 60000;
+export const freshAct = (act, now) => (act && now - act.at < ACT_FRESH_MS ? act.text : null);

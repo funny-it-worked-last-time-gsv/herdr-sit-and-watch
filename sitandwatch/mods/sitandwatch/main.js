@@ -7,7 +7,7 @@ import { LINES } from "./lines.js";
 import { panel } from "./panel.js";
 import { spaceLabel, tabLabel, tabName } from "./names.js";
 import { spaceName, tabText } from "./privacy.js";
-import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, planHeight, HEIGHT_TROUBLE, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_OPEN, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting, talker, sayText, SAY_TURN_MS, SAY_SHOW_MS } from "./rules.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, planHeight, HEIGHT_TROUBLE, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_OPEN, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting, talker, sayText, SAY_TURN_MS, SAY_SHOW_MS, parseActCommand, freshAct } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -265,6 +265,9 @@ export default class Office extends View {
           // sub-start-<terminal>-<id> / sub-stop-...: a Claude Code sub-agent (the subagents hook)
           const sub = parseSubCommand(c);
           if (sub) this.subEvent(sub, cx);
+          // act-<terminal>-<text>: what that session is doing now (the activity hook), for its bubble
+          const act = parseActCommand(c);
+          if (act) { (this.acts ??= {})[act.term] = { text: act.text, at: Date.now() }; cx.notify(); }
           // desks-<1h|8h|real>: pretend every desk not busy has been idle that long (cobwebs)
           if (c.startsWith("desks-")) { const v = c.slice(6); this.dev.desks = DESK_AGES[v] ? v : null; cx.notify(); }
           // ship, ship-merged, ship-deployed: the hook says what shipped, for the banner
@@ -882,7 +885,9 @@ export default class Office extends View {
       const walk = Object.fromEntries(Object.entries(this.walk ?? {}).filter(([, w]) => w.phase !== "home").map(([k, w]) => [k, w.phase]));
       // a working desk's turn to say what it's doing (its terminal title, through screenshot mode's renames)
       const sayAt = talker(list, now), sayDesk = list.find((a) => a.address === sayAt);
-      const say = sayDesk ? { address: sayAt, text: sayText(tabLabel(sayDesk, sayDesk.title ?? "", ""), Math.floor(now / SAY_TURN_MS)) } : null;
+      // its latest activity (the hook) while fresh, else its title; both through screenshot mode's renames
+      const act = sayDesk ? freshAct(this.acts?.[sayAt], now) : null;
+      const say = sayDesk ? { address: sayAt, text: sayText(tabLabel(sayDesk, act ?? sayDesk.title ?? "", ""), Math.floor(now / SAY_TURN_MS)) } : null;
       try { return panel(list, (this.partyUntil ?? 0) > now, { say, toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk, idle, power: this.m.power,
         min: this.min?.axis ?? null, onMin: (cx) => this.minimise(cx),
         knock: canKnock(m.longestWorkingMs, devLevel(list)) || (this.m.knockUntil ?? 0) > now, canStage: this.m.canStage,
