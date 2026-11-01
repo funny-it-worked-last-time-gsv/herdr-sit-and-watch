@@ -1197,6 +1197,23 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   c.demoAt = null;
   for (let i = 0; i < 12; i++) { await send(`sub-start-a0-many${i}`); render(c, ["working"]); }
   if (c.m.seen.size !== 1) fails.push(`fixes: sub-agents shouldn't count as agents seen, seen=${c.m.seen.size}`);
+  // A closed channel (nextCommand resolving to nothing) stops the loop instead of spinning on errors.
+  world.notes = []; await send(undefined); await send("demo-3");
+  if (c.demoAt != null) fails.push("fixes: after the channel closes (a non-string command) the loop should stop");
+
+  // Pass 2: POWER! fires as soon as the hold ends, working or not; keepMin forgets only on positive evidence;
+  // a failing hc poll still counts as the first poll.
+  if (JSON.stringify(R.powerStep(1200, 0, false)) !== '{"power":0,"fire":true}') fails.push(`fixes: a full meter whose hold ended should fire POWER!, got ${JSON.stringify(R.powerStep(1200, 0, false))}`);
+  const mn = { id: "sitandwatch", axis: "column", saved: { px: 300 } }, blkOf = (size, id = "sitandwatch", axis = "column") => ({ ok: true, id, axis, size });
+  const km = [R.keepMin(mn, { ok: false, reason: "none" }), R.keepMin(mn, null), R.keepMin(mn, blkOf({ weight: 1 })), R.keepMin(mn, blkOf({ px: 30 })),
+    R.keepMin(mn, blkOf({ px: 300 })), R.keepMin(mn, blkOf({ px: 30 }, "other")), R.keepMin(mn, blkOf({ px: 40 }, "sitandwatch", "row"))].map((x) => (x ? "keep" : "drop")).join(",");
+  if (km !== "keep,keep,keep,keep,drop,drop,drop") fails.push(`fixes: keepMin should keep unless it sees an open block, another id or axis, got ${km}`);
+  localStorage.setItem("waiting", JSON.stringify({ h8: clock.now - 5 * MIN }));
+  const o4 = new Office(); o4.init(world.props, makeCx());
+  world.agents = []; world.hcLs = undefined;                         // hc answers garbage: the poll fails
+  S.advance(10000); await S.settle(); await S.settle(); o4.render();
+  if (o4.waiting?.h8 != null) fails.push("fixes: a failed first poll should still let unlisted waiters go");
+  world.hcLs = { terminals: [] };
 }
 
 // ---- the power bar: a terminal both in agents() and in hc's list counts once ---------------

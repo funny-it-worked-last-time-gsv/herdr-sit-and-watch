@@ -150,9 +150,8 @@ export default class Office extends View {
           const key = JSON.stringify(next);
           const partyOver = this.partyUntil && Date.now() > this.partyUntil;
           if (partyOver) this.partyUntil = 0;
-          this.polled = true;
           if (key !== this.helpersKey || partyOver) { this.helpersKey = key; this.helpers = next; cx.notify(); }
-        } catch {}
+        } catch {} finally { this.polled = true; }   // tried once: unlisted waiters may go now, whether hc answered or not
       });
       // What the mood is picked from (see trackMetrics); one-shots count down in ticks of the 1s timer.
       this.m = {
@@ -207,6 +206,7 @@ export default class Office extends View {
       cx.spawn(async (cx) => {
         for (;;) {
           const c = await nextCommand();
+          if (typeof c !== "string") return;                  // the channel closed (teardown): stop, don't spin
           let mine = false;
           try { mine = localStorage.getItem(OWNER) === token; cx.notify(); } catch { mine = false; }
           if (!mine) { try { run(`sitandwatch.${c}`); } catch {} return; }
