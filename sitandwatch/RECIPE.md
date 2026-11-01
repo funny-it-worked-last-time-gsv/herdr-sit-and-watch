@@ -442,7 +442,7 @@ add to `~/.claude/settings.json`:
 ## Activity hook
 
 `hooks/sitandwatch-activity.py` is a Claude Code `PreToolUse` hook (async). `describe()` turns the
-tool call into a phrase, a plain verb or the tool's own name first: Read → `Read <file name>`, Edit/Write → `Edit <file name>`, Bash → `Run <program [subcommand]>`
+tool call into a phrase, a plain verb or the tool's own name first: Read → `Read <file name>`, Edit/Write → `Edit <file name>`, Bash → `<program [subcommand]>` (no verb: `git push`, `npm test`) of its first step that isn't setup (`cd`, `pushd`, `popd`, `export`, `set`, `source`, a bare `VAR=value`; steps split on `&&`, `||`, `;`, newlines), so `cd ~/proj && git diff` is `git diff`
 (leading `VAR=value` skipped, a path cut to its name, no other arguments: they can hold secrets), Grep → `Grep <pattern>`, Glob → `Glob <pattern>`, Task/Agent → `> <description>`,
 WebSearch → `Search <query>`, WebFetch → `Read the web`, TodoWrite → `Plan`, an MCP tool → `Use <service>`
 (`mcp__claude_ai_Gmail__search_threads` → `Use Gmail`), else the tool name. The panel's `sayText()` keeps
@@ -463,8 +463,8 @@ Keeping secrets off the screen:
   catches short passwords like `hunter2` that fit in 20 characters. It costs the odd `sha256`.
   All-letter passwords still show. File names aren't redacted: they're names, not contents.
 - **A subcommand only for `SUBCOMMANDS`** (git, npm, gh, docker, cargo and the like), and only if it's
-  letters and dashes. Otherwise the second word is an argument: `printf <token>` shows `Run printf`,
-  `cd <client-folder>` shows `Run cd`.
+  letters and dashes. Otherwise the second word is an argument: `printf <token>` shows `printf`,
+  `cd <client-folder>` shows `cd`.
 - **Off switch**: with the "Activity bubbles" option off, `enabled()` reads it from Herdr's
   `shared.json` (`HERDR_APP_HOME`, default `~/.config/herdr-app`) and the hook sends nothing. If it
   can't read the file, it counts as on.
