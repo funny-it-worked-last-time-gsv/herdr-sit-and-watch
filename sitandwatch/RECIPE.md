@@ -438,8 +438,8 @@ add to `~/.claude/settings.json`:
 ## Activity hook
 
 `hooks/sitandwatch-activity.py` is a Claude Code `PreToolUse` hook (async). `describe()` turns the
-tool call into a phrase: Read/Edit/Write → `Reading|Editing <file name>`, Bash → `Running <first 3
-words>`, Grep → `Searching <pattern>`, Glob → `Looking for <pattern>`, Task/Agent → `Delegating:
+tool call into a phrase: Read/Edit/Write → `Reading|Editing <file name>`, Bash → `Running <program [subcommand]>`
+(leading `VAR=value` skipped, a path cut to its name, no other arguments: they can hold secrets), Grep → `Searching <pattern>`, Glob → `Looking for <pattern>`, Task/Agent → `Delegating:
 <description>`, WebFetch/WebSearch, TodoWrite → `Planning`, else the tool name. `phrase()` keeps
 printable ASCII on one line, at most 40 characters (cut at a word, `...`). It sends `herdr-app do
 sitandwatch.act-<HC_TERMINAL_ID>-<phrase in base64url, no padding>`; outside Herdr, or for another
