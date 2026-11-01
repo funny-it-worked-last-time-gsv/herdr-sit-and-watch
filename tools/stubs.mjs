@@ -106,7 +106,13 @@ export const shared = (k) => world.shared[k];
 export const setShared = (k, v) => { world.shared[k] = v; };
 export const openOverlay = (spec) => { world.overlays.push(spec); return `ov${world.overlays.length}`; };
 export const closeOverlay = (id) => { world.overlays = world.overlays.filter((_, i) => `ov${i + 1}` !== id); return null; };
-export const nextCommand = () => new Promise(() => {});   // no commands offline
+// Commands (`herdr-app do sitandwatch.<c>`): a test queues one with sendCommand(); with nothing
+// queued, nextCommand() never resolves, as before. Each waiting loop takes the next command in
+// the order it started waiting; dropCommandWaiters() forgets the loops of earlier mounts.
+const cmdQueue = [], cmdWaiters = [];
+export const nextCommand = () => (cmdQueue.length ? Promise.resolve(cmdQueue.shift()) : new Promise((res) => cmdWaiters.push(res)));
+export function sendCommand(c) { const w = cmdWaiters.shift(); if (w) w(c); else cmdQueue.push(c); }
+export function dropCommandWaiters() { cmdWaiters.length = 0; cmdQueue.length = 0; }
 export async function hc(argv) {
   if (argv[0] === "ls") return { stdout: JSON.stringify(world.hcLs) };
   if (argv[0] === "get") return { stdout: JSON.stringify(world.hcGet[argv[1]] ?? {}) };
