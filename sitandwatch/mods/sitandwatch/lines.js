@@ -33,6 +33,12 @@ export const LINES = {
   streak: ["HE'S ON FIRE", "don't stop him", "this one gets it", "again!", "serial winner", "he cannot miss"],
   meltdown: ["WHY DO I EVEN HAVE AGENTS", "this is fine", "everyone needs me", "chaos", "I need a minute",
     "absolute scenes (not complimentary)"],
+  // clicking a pet: what it thinks of him (shown as "<name>: <line>")
+  cat: ["...", "pathetic", "feed me", "he's not even working", "I could do his job", "unbelievable", "sigh",
+    "that's my chair", "do something", "embarrassing"],
+  beagle: ["walk?", "*sigh*", "he's not even working", "snack?", "is it dinner", "I believe in the robots",
+    "can I have the popcorn", "boof", "he could at least type"],
+  asleep: ["zzz", "five more minutes", "mmf", "not now", "it's my chair now"],
   // clicking him
   poke: ["you seeing this?", "the work is working", "I'm sat", "shh, I'm watching", "best seat in the house",
     "don't block my view", "this is my show", "pass the popcorn"],

@@ -3,8 +3,9 @@ import { h_flex, v_flex } from "gpui-base";
 import { agents, hc, nextCommand, spaces, panes, props, run, setAgentOrder, knownAgents, layout, notify } from "herdr";
 import { options, setOption, optionsDialog, openOptions } from "./options.js";
 import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H, PETS, WALK_MS } from "./art.js";
+import { LINES } from "./lines.js";
 import { panel } from "./panel.js";
-import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, shouldClearMin, MIN_GUARD_MS, MIN_TROUBLE } from "./rules.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, shouldClearMin, MIN_GUARD_MS, MIN_TROUBLE, canKnock, pileSize } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -175,6 +176,7 @@ export default class Office extends View {
         if (this.powerTick(token)) changed = true;
         this.minBusy = false;
         if (this.minCheck()) changed = true;
+        if (this.knockTick(cx)) changed = true;
         if (this.demoAt != null || partyOver || changed || ++ticks % 15 === 0) cx.notify();
       });
       // `herdr-app do sitandwatch.ship` (sent by the Claude Code hook after a push) sets off the explosion:
@@ -270,6 +272,36 @@ export default class Office extends View {
     return false;
   }
 
+  // Once a second: the can's push and the popcorn pile, from what the last render drew (panel() reports
+  // it through onDrawn). The push starts only once a knocking cat is on screen (not hidden behind a
+  // louder pose): stage 0 the cat's paw on the can, 800ms later stage 1 the can on the floor. While his
+  // popcorn is on the floor, Buddy eats it: the pile shrinks over a minute. Returns whether to redraw.
+  knockTick(cx) {
+    const m = this.m, drawn = this.drawn ?? {};
+    let changed = false;
+    if (!drawn.knocking) { if (m.canStage != null) { m.canStage = null; changed = true; } }
+    else if (m.canStage == null) {
+      m.canStage = 0; changed = true;
+      const key = (this.knockKey = Math.random());
+      cx.timer.after(800, (cx) => { if (this.knockKey === key && m.canStage === 0) { m.canStage = 1; cx.notify(); } });
+    }
+    const before = pileSize(m.spillTicks ?? 0);
+    m.spillTicks = drawn.spilled ? (m.spillTicks ?? 0) + 1 : 0;
+    return changed || pileSize(m.spillTicks) !== before;
+  }
+
+  // A pet was clicked (or the dev petPoke fired): its bubble for two ticks, a line from its pool
+  // ("asleep" while it's curled on the chair).
+  pokePet(name, cx) {
+    const p = PETS.find((x) => x.name === name) ?? PETS[Math.floor(Math.random() * PETS.length)];
+    const pose = this.drawn?.poses?.[p.name.toLowerCase()];
+    const pool = pose === "curl" ? LINES.asleep : LINES[p.kind] ?? LINES.cat;
+    this.m.petSay = { name: p.name, line: pool[Math.floor(Math.random() * pool.length)] };   // (m.petPoke is its tick count)
+    startOneShot(this.m, "petPoke");
+    this.m.lastUser = Date.now();
+    cx.notify();
+  }
+
   // The power bar, once a second. Only the copy that owns the commands counts (a stale copy left by a
   // reload would count twice); from the live agents, not the list on screen (the demo shows fakes).
   // Returns whether the drawn bar changed.
@@ -328,6 +360,8 @@ export default class Office extends View {
   // Developer mode's "fire" buttons: start a one-shot exactly as the real event would.
   fire(ev, cx) {
     const m = this.m, first = this.list[0]?.address ?? null;
+    if (ev === "petPoke") return this.pokePet(null, cx);
+    if (ev === "canKnock") { m.knockUntil = Date.now() + 20000; cx.notify(); return; }
     if (CHIP_KEY[ev]) startOneShot(m, CHIP_KEY[ev]);
     if (ev === "finish") this.partyUntil = Date.now() + 3000;
     if (ev === "streak") m.streakAddr = first;
@@ -699,7 +733,10 @@ export default class Office extends View {
       } : null;
       const walk = Object.fromEntries(Object.entries(this.walk ?? {}).filter(([, w]) => w.phase !== "home").map(([k, w]) => [k, w.phase]));
       try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk, idle, power: this.m.power,
-        min: this.min?.axis ?? null, onMin: (cx) => this.minimise(cx) }); }
+        min: this.min?.axis ?? null, onMin: (cx) => this.minimise(cx),
+        knock: canKnock(m.longestWorkingMs, devLevel(list)) || (this.m.knockUntil ?? 0) > now, canStage: this.m.canStage,
+        pile: pileSize(this.m.spillTicks ?? 0), petPoke: this.m.petSay, onPet: (name, cx) => this.pokePet(name, cx),
+        onDrawn: (d) => { this.drawn = d; } }); }
       catch (e) { return div().p(8).bg("#fff").child(txt(`ERR ${e?.message ?? e}`, 12, "#a8322a")); }
     }
     if (role === "rail") {
