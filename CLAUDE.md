@@ -14,7 +14,7 @@ herdr-app check sitandwatch/mods/sitandwatch          # Herdr's own loader (need
 
 - `tools/check.mjs` runs the mod in plain Node (a resolve hook maps `gpui-kit`, `gpui-base` and `herdr` to
   `tools/stubs.mjs`, with a fake clock). It fails on any change to his recorded decisions (the golden in
-  `tools/golden.json`, captured from 9e52cc0), on an `ERR` panel, on a render over the element budget, and
+  `tools/golden.json`, captured from a0c7ee5; its element-budget base is kept at 9e52cc0's 260), on an `ERR` panel, on a render over the element budget, and
   on the pet-wandering rules.
 - A deliberate change to a mood rule or a one-shot event: re-capture the golden with
   `node tools/check.mjs --capture` from a commit (it refuses uncommitted mod changes), and say why in the

@@ -32,7 +32,7 @@ const LINES_OF = (k) => LINES[k] ?? [];
 const { clock, world, makeCx, reseed, texts, ids, count, walk, sendCommand } = S;
 
 // Intended differences from the golden (new features), and the element budget headroom.
-const ALLOWED = { newChips: ["power", "petPoke", "canKnock", "subagent"], newOneShots: ["powerUp", "petPoke"], newDemoStates: 3 };
+const ALLOWED = { newChips: [], newOneShots: [], newDemoStates: 0 };   // since the golden's commit (a0c7ee5): none yet
 const BUDGET_HEADROOM = 60;
 
 // ---- harness ----------------------------------------------------------------
