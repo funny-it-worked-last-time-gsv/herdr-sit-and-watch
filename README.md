@@ -7,6 +7,9 @@ desks. You are the developer in the red velvet armchair in the corner, watching 
 work. The more of them are working, the more excited you get. See
 [sitandwatch/RECIPE.md](sitandwatch/RECIPE.md) for how it is built.
 
+<p align="center"><img src="sitandwatch/media/a-day-at-the-desks.gif" width="322" alt="The demo: a day at the desks, from a quiet start through sub-agents ramping up and a PR merging to the pets asleep on the chair"><br>
+The demo (click the header): a day at the desks.</p>
+
 <table>
 <tr><td align="center" valign="top"><img src="sitandwatch/media/ovation.gif" width="250" alt="Four or more working: standing ovation"><br>Four or more working: standing ovation</td><td align="center" valign="top"><img src="sitandwatch/media/finished.gif" width="250" alt="One finished: party popper"><br>One finished: party popper</td><td align="center" valign="top"><img src="sitandwatch/media/phone.gif" width="250" alt="One needs you: the phone call"><br>One needs you: the phone call</td></tr>
 <tr><td align="center" valign="top"><img src="sitandwatch/media/merged.gif" width="250" alt="PR merged: KABOOM"><br>PR merged: KABOOM</td><td align="center" valign="top"><img src="sitandwatch/media/meltdown.gif" width="250" alt="All of them need you: meltdown"><br>All of them need you: meltdown</td><td align="center" valign="top"><img src="sitandwatch/media/are-you-sure.gif" width="250" alt="Every third block: "Are you sure?" "Yes""><br>Every third block: "Are you sure?" "Yes"</td></tr>
