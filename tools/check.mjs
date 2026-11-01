@@ -860,6 +860,25 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   for (const bad of ["toString", "constructor", "__proto__", "hasOwnProperty"]) if (R.readOptions({ floor: bad }).floor !== "slate") fails.push(`options: floor "${bad}" should fall back to slate`);
 }
 
+{ // Value: protects=a finished agent's desk showing how long it's waited ("<1m", "12m", "3h", "2d"), from when it finished
+  // (hc's status_ms), and only on done desks; fails_when=the label goes, shows on working/idle desks, or the units slip;
+  // why_new=nothing else reads the done label; seam=none; no_claim=Herdr's real status_ms (stubbed hc)
+  const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
+  const lab = [0, 59999, MIN, 59 * MIN, 60 * MIN, 23 * 60 * MIN + 59 * MIN, 24 * 60 * MIN, 50 * 60 * MIN].map(R.sinceLabel).join(",");
+  if (lab !== "<1m,<1m,1m,59m,1h,23h,1d,2d") fails.push(`done label: got ${lab}`);
+  S.dropCommandWaiters();
+  const { o } = mount();
+  const sts = ["working", "done", "idle", "done"], ago = [0, 12 * MIN, 3 * 60 * MIN, 30 * 1000];
+  world.hcLs = { terminals: sts.map((status, i) => ({ address: `a${i}`, state: "live", status, name: `t${i}` })) };
+  world.hcGet = Object.fromEntries(sts.map((st, i) => [`a${i}`, { status: { state: st }, status_ms: clock.now - ago[i] }]));
+  S.advance(10000); await S.settle(); await S.settle();
+  const t = render(o, sts);
+  const label = (a) => { let v = null; walk(t, (e) => { if (e.idv === `pt-${a}`) v = e.text; }); return v; };
+  if (label("a1") !== "12m" || label("a3") !== "<1m") fails.push(`done label: done 12m and 30s ago should read 12m and <1m, got ${label("a1")} ${label("a3")}`);
+  if (label("a0") != null || label("a2") != null) fails.push("done label: only done desks get one");
+  noErr(t, "done label");
+}
+
 // ---- the can, the popcorn, clicking a pet ------------------------------------------
 {
   // Value: protects=the real can-knock (10+ min of work at level 2+), its two stages only once a knocking cat is drawn (not

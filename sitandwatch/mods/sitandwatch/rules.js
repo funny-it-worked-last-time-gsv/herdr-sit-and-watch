@@ -211,3 +211,11 @@ export const KNOCK_AFTER = 10 * MIN;
 export const canKnock = (longestWorkingMs, level) => longestWorkingMs > KNOCK_AFTER && level >= 2;
 // Spilled popcorn shrinks while Buddy eats it: 2 full (under 30s), 1 half (under 60s), 0 crumbs.
 export const pileSize = (ticks) => (ticks < 30 ? 2 : ticks < 60 ? 1 : 0);
+// How long a finished agent has waited for you, on its desk: "<1m", "12m", "3h", "2d".
+export function sinceLabel(ms) {
+  const m = Math.floor(Math.max(0, ms) / MIN);
+  if (m < 1) return "<1m";
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
+}
