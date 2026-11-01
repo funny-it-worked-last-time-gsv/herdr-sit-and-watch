@@ -62,16 +62,20 @@ herdr-app do sitandwatch.chaos            # chaos mode on for good, or off again
 Ask your agent to add this mod (it reads every file first), or by hand:
 
 1. Copy `sitandwatch/mods/sitandwatch` into `~/.config/herdr-app/mods/`.
-2. Herdr docks it on the left the first time it sees it. To put it in your sidebar instead, add a
-   block to the sidebar column of your own layout (clone a shipped layout first):
+2. Unless you want it somewhere else, it goes in the **bottom-left corner**: the bottom of the
+   sidebar, under Agents and above Settings. Herdr won't dock it by itself (`"place": "none"`), so
+   add this block to your layout's `sidebar` column, just before `sidebar-footer`:
    ```json
-   { "id": "sitandwatch", "type": "block", "content": { "mod": "sitandwatch" }, "size": { "weight": 1.3 }, "min": 220 }
+   { "id": "sitandwatch", "type": "block", "content": { "mod": "sitandwatch" }, "size": { "px": 300 } }
    ```
+   Herdr's own layouts (`main`, ...) are read-only: clone one first
+   (`herdr-app do layout.clone '{"name":"main"}'` makes and switches to `main-copy`) and edit the
+   copy. Keep the id `sitandwatch`.
 
 For the explosion on `git push`, `gh pr merge` or a production `vercel` deploy, install the Claude
 Code hook in `sitandwatch/hooks/` (setup in [RECIPE.md](sitandwatch/RECIPE.md#ship-hook)).
 
-Delete the folder to remove it. It makes no network requests, runs no programs other than
+Delete the folder and that block to remove it. It makes no network requests, runs no programs other than
 `hc ls` and `hc get` (to see background agents, crashes and how long each agent has been busy) and
 reads no files outside its folder. Nothing animates while
 nothing is happening.
