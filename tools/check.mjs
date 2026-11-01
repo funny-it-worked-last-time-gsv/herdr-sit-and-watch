@@ -1128,7 +1128,8 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
 // ---- real activity: the PreToolUse hook → the desk's bubble ------------------------------------------
 {
   // Value: protects=the activity hook turning tool calls into short phrases (Editing/Reading <file>, Running <cmd>,
-  //   Searching <pattern>, Delegating), sent base64url with the terminal and decoded by the panel; a desk's bubble saying
+  //   Searching <pattern>, Delegating; a command shows only its program and subcommand, never assignments, paths or
+  //   arguments that could hold secrets), sent base64url with the terminal and decoded by the panel; a desk's bubble saying
   //   its fresh activity (under a minute) through screenshot mode, else its title; malformed or non-ASCII commands
   //   refused; fails_when=the hook's phrase, encoding or event filter changes, the panel stops decoding, a stale act still
   //   shows, or a renamed project leaks; why_new=new feature; seam=none (a stand-in herdr-app on PATH, as for the
@@ -1143,18 +1144,18 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   const run = (data, term = "t8") => spawnSync("python3", [hook], { input: typeof data === "string" ? data : JSON.stringify(data), env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, HC_TERMINAL_ID: term } });
   const pre = (tool_name, tool_input) => ({ hook_event_name: "PreToolUse", tool_name, tool_input });
   run(pre("Edit", { file_path: "/home/x/proj/src/main.js" }));
-  run(pre("Bash", { command: "npm   test --  --watch=false extra" }));
+  run(pre("Bash", { command: "npm   test --  --watch=false extra" }));   // program and subcommand only
   run(pre("Read", { file_path: "/a/README.md" }));
   run(pre("Grep", { pattern: "useAuth" }));
   run(pre("Task", { description: "Review the diff" }));
-  run(pre("Bash", { command: "echo " + "x".repeat(80) }));
+  run(pre("Bash", { command: "API_KEY=sk-secret SP=/tmp/x /usr/bin/curl -H 'Authorization: Bearer abc' https://x" }));
   run(pre("Edit", { file_path: "/a/b.js" }), "");                 // not in Herdr: nothing
   run({ hook_event_name: "PostToolUse", tool_name: "Edit" });     // another event: nothing
   const bad = run("not json");
   const sent = existsSync(out) ? rf(out, "utf8").trim().split("\n") : [];
   const decoded = sent.map((l) => R.parseActCommand(l.replace(/^do sitandwatch\./, "")));
   const texts6 = decoded.map((d) => d && `${d.term}:${d.text}`);
-  const want = ["t8:Editing main.js", "t8:Running npm test --", "t8:Reading README.md", "t8:Searching useAuth", "t8:Delegating: Review the diff", "t8:Running echo..."];
+  const want = ["t8:Editing main.js", "t8:Running npm test", "t8:Reading README.md", "t8:Searching useAuth", "t8:Delegating: Review the diff", "t8:Running curl"];
   if (JSON.stringify(texts6) !== JSON.stringify(want) || bad.status !== 0) fails.push(`act: the hook should send these phrases and nothing else, got ${JSON.stringify(texts6)} exit ${bad.status}`);
   if (sent.some((l) => !/^do sitandwatch\.act-t8-[A-Za-z0-9_-]+$/.test(l))) fails.push(`act: commands should be letters, digits, - and _ only, got ${JSON.stringify(sent)}`);
   rmSync(dir, { recursive: true, force: true });
