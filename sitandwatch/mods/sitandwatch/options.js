@@ -5,12 +5,12 @@ import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { shared, setShared, openOverlay, closeOverlay, props } from "herdr";
 import { ink, txt, PETS } from "./art.js";
-import { FLOORS, readOptions } from "./rules.js";
+import { FLOORS, HEIGHTS, readOptions } from "./rules.js";
 
 export const OPTIONS_KEY = "sitandwatch.options";
 export const options = () => readOptions(shared(OPTIONS_KEY));
 export function setOption(change) { setShared(OPTIONS_KEY, { ...options(), ...change }); }
-export const openOptions = () => openOverlay({ mod: "sitandwatch", kind: "dialog", width: 380, height: 470, props: { options: true } });
+export const openOptions = () => openOverlay({ mod: "sitandwatch", kind: "dialog", width: 380, height: 540, props: { options: true } });
 
 const PANEL = "#2b2f3a", LABEL = "#9aa3b0", TEXT = "#fff8e1";
 
@@ -34,6 +34,9 @@ export function optionsDialog(handle) {
     .on_key_down((e, cx) => { if (e.key === "escape") { close(); cx.stop_propagation(); } })
     .size_full().p(16).gap(14).bg(PANEL)
     .child(h_flex().items_center().child(div().flex_1().child(txt("Sit & Watch options", 16, TEXT))).child(txt("Esc", 10, LABEL)))
+    .child(section("Height", "The panel's height in the sidebar (or drag the line above it).",
+      [pill("height-layout", "layout", !o.height, () => setOption({ height: null })),
+        ...HEIGHTS.map((h) => pill(`height-${h}`, `${h}`, o.height === h, () => setOption({ height: h })))]))
     .child(section("Floor", "Behind the desks and the armchair.",
       Object.entries(FLOORS).map(([k, f]) => pill(`floor-${k}`, f.name, o.floor === k, () => setOption({ floor: k }), f.color))))
     .child(section("Pets", "Who lives in the corner (names and coats: PETS in art.js).",

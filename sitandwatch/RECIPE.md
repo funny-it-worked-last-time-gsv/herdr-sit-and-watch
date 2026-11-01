@@ -179,7 +179,7 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   demo, ends the party and counts down the one-shots.
 - Commands through `nextCommand()`: `demo`, `demo-<n>`, `dev`, `chaos`, `options`, `min`, `wander`,
   `ship` and `ship-<kind>`, `fire-<event>`, `mood-<name|auto>`, `level-<n|real>`, `pets-<scene|auto>`,
-  `desks-<1h|8h|real>`, and `sub-start-<terminal>-<id>` / `sub-stop-...` from the sub-agent hook. Calls `agents()`,
+  `desks-<1h|8h|real>`, `height-<px|layout>`, and `sub-start-<terminal>-<id>` / `sub-stop-...` from the sub-agent hook. Calls `agents()`,
   `hc` (`ls`, `get`), `run("agent.focus")`.
   No network, no `exec`, no files outside its folder.
 - Based on [zuccs/herdr-office-layout](https://github.com/zuccs/herdr-office-layout) (MIT): its
@@ -329,12 +329,18 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - `options.js`: the Options dialog, opened from OPTS in the header (its own `on_mouse_down` /
   `on_click` stop propagation, so the header's demo toggle doesn't fire) or
   `herdr-app do sitandwatch.options`, as `openOverlay({ mod: "sitandwatch", kind: "dialog", width: 380,
-  height: 470, props: { options: true } })`. With `props().options` the view skips the panel's timers
-  and draws the dialog: floor (`FLOORS` in `rules.js`, slate `#6b7a8f` by default), pets on/off,
+  height: 540, props: { options: true } })`. With `props().options` the view skips the panel's timers
+  and draws the dialog: height (`HEIGHTS` in `rules.js`: 240/300/400/500, or `layout`), floor (`FLOORS` in `rules.js`, slate `#6b7a8f` by default), pets on/off,
   speech bubbles on/off, chaos and developer mode.
 - Stored in `shared("sitandwatch.options")`, read through `readOptions()` (any missing or broken value
   falls back to the default). Shared rather than `localStorage`, which is per copy: the dialog is a
   copy of its own.
+- Height: `heightTick()` in `main.js`, once a second in the copy that owns the commands: when the chosen
+  height isn't applied yet (and at startup, since a Herdr restart puts the block back to the layout's
+  size), `heightToApply()` decides, then `layout.resize { id, px }`. Only for a block in a column (docked
+  in a row its size is a width), never while minimised, and not when it's already that size.
+  `height-<px|layout>` sets the option. For a drag handle, the layout's `sidebar` column needs
+  `"resizable": true`.
 
 ## Watch out
 
