@@ -1156,6 +1156,10 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
     ["git push origin --delete main", onMain, null], ["git push origin :main", onMain, null], ["git push --tags", onMain, null],
     ["gh pr view 7 && gh pr merge 7 --rebase --delete-branch | tail -1", onFeature, "ship-merged"],
     ["gh pr create --base main", onMain, "pr"],                            // no URL in the output: no number
+    // a PR whose body talks about merging and pushing: the body is quoted text, not commands
+    ["gh pr create --base main --title t --body \"$(cat <<'EOF'\nOnly a push to main ships.\ngh pr merge 5 merges; git push origin main pushes.\n| a | vercel --prod |\nEOF\n)\"", onMain, "pr-12", { stdout: "https://github.com/o/r/pull/12\n" }],
+    ['echo "gh pr merge 5"', onMain, null], ['echo "a; git push origin main"', onMain, null],
+    ["npx vercel --prod", onMain, "ship-deployed"],
     ["git push -u origin feature 2>&1 | tail -1; gh pr create --fill", onMain, "pr-11", { stdout: "https://github.com/o/r/pull/11\n" }],   // the PR beats its push
     ["git status | grep -n x && git push", onMain, "ship-pushed"],
     ["git push && vercel --prod", onFeature, "ship-deployed"],

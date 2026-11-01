@@ -13,9 +13,36 @@ import subprocess
 import sys
 
 
-# One part of a compound command (split on &&, ||, ;, | and newlines) at a time, so a dry-run flag
-# only cancels the push it belongs to, not a `grep -n` or `head -n` elsewhere in the same command.
-PARTS = re.compile(r"&&|\|\||;|\||\n")
+def steps(cmd: str) -> list:
+    """The steps of a compound command, split on &&, ||, ;, | and newlines like the shell: never inside
+    quotes, so a long quoted argument (a PR body, a commit message in "$(cat <<EOF ...)") stays one step
+    and its lines aren't read as commands. One step at a time, so a dry-run flag only cancels the push
+    it belongs to, not a `grep -n` elsewhere in the same command."""
+    out, cur, quote, i = [], [], None, 0
+    while i < len(cmd):
+        c = cmd[i]
+        if quote:
+            cur.append(c)
+            if c == "\\" and quote == '"' and i + 1 < len(cmd):
+                cur.append(cmd[i + 1])
+                i += 1
+            elif c == quote:
+                quote = None
+        elif c in "'\"":
+            quote = c
+            cur.append(c)
+        elif cmd.startswith(("&&", "||"), i):
+            out.append("".join(cur))
+            cur = []
+            i += 1
+        elif c in ";|\n":
+            out.append("".join(cur))
+            cur = []
+        else:
+            cur.append(c)
+        i += 1
+    out.append("".join(cur))
+    return [p for p in out if p.strip()]
 
 
 # Pushing a feature branch (say, to open a PR) isn't shipping: only a push that updates the main branch is.
@@ -40,16 +67,25 @@ def _current(cwd: str) -> str:
     return _git(cwd, "symbolic-ref", "--short", "HEAD")   # works before the first commit, unlike rev-parse
 
 
-def git_push(part: str, cwd: str):
-    """(arguments after `push`, the folder it runs in) when this part is `git [options] push ...`, else None.
-    Read like the shell would (quotes kept together), so `git -c credential.helper='!gh auth x' push` counts
-    and `git log --grep push` doesn't. `-C <dir>` moves the folder."""
+def command_words(part: str) -> list:
+    """One step's words, read like the shell (quotes kept together, so quoted text is one word), with
+    leading VAR=value assignments and an npx/bunx runner dropped. The first word is the command."""
     try:
         words = shlex.split(part)
     except ValueError:
         words = part.split()
     while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
-        words.pop(0)                                         # leading VAR=value assignments
+        words.pop(0)
+    if words and words[0] in ("npx", "bunx"):
+        words.pop(0)
+    return words
+
+
+def git_push(part: str, cwd: str):
+    """(arguments after `push`, the folder it runs in) when this part is `git [options] push ...`, else None.
+    Read like the shell would (quotes kept together), so `git -c credential.helper='!gh auth x' push` counts
+    and `git log --grep push` doesn't. `-C <dir>` moves the folder."""
+    words = command_words(part)
     if not words or os.path.basename(words[0]) != "git":
         return None                                          # git must be the command: not `echo git push`
     rest, where = words[1:], cwd
@@ -95,11 +131,14 @@ def push_targets(args: list, cwd: str) -> set:
 def ship_part(part: str, cwd: str = ".") -> str | None:
     """What this one command does: ships ("merged", "deployed", "pushed": to main), opens a PR ("pr"),
     pushes another branch ("push"), or None."""
-    if re.search(r"\bgh\s+pr\s+merge\b", part):
+    # The command itself, not words in quoted text: a PR body that says "gh pr merge" merges nothing.
+    words = command_words(part)
+    cmd = os.path.basename(words[0]) if words else ""
+    if cmd == "gh" and words[1:3] == ["pr", "merge"]:
         return "merged"
-    if re.search(r"\bvercel\b.*(--prod|\bpromote\b)", part):
+    if cmd == "vercel" and ("--prod" in words or "promote" in words[1:2]):
         return "deployed"
-    if re.search(r"\bgh\s+pr\s+create\b", part):
+    if cmd == "gh" and words[1:3] == ["pr", "create"]:
         return "pr"
     push = git_push(part, cwd)
     if push:
@@ -120,7 +159,7 @@ def ship_kind(cmd: str, cwd: str = ".") -> str | None:
     """The biggest thing this shell command ships, for the banner (PR MERGED > DEPLOYED > IT'S LIVE), or None.
     cwd is where the session runs; a `cd <dir>` step earlier in the command moves it, as the shell would."""
     kinds = set()
-    for p in PARTS.split(cmd):
+    for p in steps(cmd):
         c = re.match(r"\s*cd\s+(\S+)\s*$", p)
         if c:
             cwd = _resolve(cwd, c.group(1))
