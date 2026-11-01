@@ -2,7 +2,8 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run } from "herdr";
 import { ink, SCREEN, r, txt, look, bot, spectator, stance, pets, explosion, miniFace, DEV_W, DEV_H } from "./art.js";
-import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES, FLOORS, cobwebLevel, DESK_AGES, sinceLabel, POWER_FULL, POWER_STEPS, powerShown } from "./rules.js";
+import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES, FLOORS, cobwebLevel, DESK_AGES, sinceLabel, POWER_FULL, POWER_STEPS, powerShown, headcount, deskOf } from "./rules.js";
+import { deskName, tabName } from "./names.js";
 import { options, openOptions } from "./options.js";
 
 // ---- developer mode -------------------------------------------------------
@@ -96,11 +97,14 @@ function desk(a, x, y, sw, rh, mark = null, idleMs = 0) {
     .on_click(() => run("agent.focus", { terminal: a.address }))
     .child(scr)
     .child(r(Math.round(sw / 2) - 3, 24, 6, 3, "#2b2f3a"))
-    .child(r(Math.round(sw / 2) - 26, 27, 52, 6, "#f0dcb0")).child(r(Math.round(sw / 2) - 26, 33, 52, 4, "#d4b27c"))
+    .child(r(Math.round(sw / 2) - 26, 27, 52, 10, "#f0dcb0").border_b(4).border_color("#d4b27c"))   // top and front: one element
     .child(div().absolute().left(Math.round(sw / 2) - 12).top(28).child(body))
     .children(cobwebs(sw, cobwebLevel(idleMs), a.address))
-    // finished and not looked at yet: how long it's been waiting, on its screen (over any dust)
-    .when(a.status === "done", (e) => {
+    // its Claude Code sub-agents: done/total on a tag at the desk's corner (2/5: five ran, two finished)
+    .when(!!a.subs, (e) => e.child(div().id(`psub-${a.address}`).absolute().left(Math.round(sw / 2) + 14).top(20).px(2).bg("#2b2f3a")
+      .child(txt(`${a.subs.done}/${a.subs.total}`, 10, a.subs.running ? "#ffd86a" : "#9fe0a0"))))
+    // finished and not answered yet (looked at or not): how long it's been waiting, on its screen (over any dust)
+    .when(a.status === "done" || !!a.waiting, (e) => {
       const label = sinceLabel(idleMs);                       // one element: centred by its own width (5px a character)
       return e.child(txt(label, 10, "#cfe0ff").absolute().left(Math.round(sw / 2) - Math.round(label.length * 2.5)).top(9).id(`pt-${a.address}`));
     })
@@ -108,8 +112,9 @@ function desk(a, x, y, sw, rh, mark = null, idleMs = 0) {
     // the meme: the agent asks, he answers from the chair
     .when(mark === "areYouSure", (e) => e.child(div().absolute().left(0).top(0).w(sw).flex().justify_center()
       .child(div().px(3).bg("#ffffff").border(1).border_color(ink).child(txt("Are you sure?", 10, ink)))))
-    .when(rh >= 60, (e) => e.child(div().absolute().left(0).top(rh - 12).w(sw).flex().justify_center()
-      .child(txt((a.tab_name ?? "").slice(0, 12), 10, a.focused ? "#fff8e1" : ink))));
+    // its name under the chair (deskName in names.js; one element, centred by its width: 5px a character)
+    .child(((name) => txt(name, 10, a.focused ? "#fff8e1" : ink).absolute().left(Math.round(sw / 2 - name.length * 2.5)).top(rh - 12).id(`pn-${a.address}`))
+      (deskName(a)));
 }
 
 // The minimise button: its own mouse-down and click, so the header's demo toggle never fires.
@@ -128,28 +133,28 @@ const powerBar = (power, vertical) => {
 // Minimised: a strip (in a column: 30px tall) or a rail (in a row: 40px wide) with the count, the
 // power bar, his face and the button to bring the panel back.
 function minimised(axis, list, level, mood, sad, opts) {
-  const working = list.filter((a) => a.status === "working").length;
+  const { working, total } = headcount(list);              // sub-agents count too
   const face = miniFace(level, mood, sad, 2);
   if (axis === "row") return v_flex().id("saw-rail").size_full().overflow_hidden().bg("#8796b0").py(6).gap(6).items_center()
     .child(face).child(txt(`${working}`, 10, "#fff8e1")).child(powerBar(opts.power ?? 0, true)).child(div().flex_1()).child(minButton("+", opts.onMin));
   return h_flex().id("saw-strip").size_full().overflow_hidden().bg("#8796b0").px(8).gap(6).items_center()
-    .child(txt(`${working}/${list.length} AT IT`, 12, "#fff8e1")).child(div().flex_1())
+    .child(txt(`${working}/${total} AT IT`, 12, "#fff8e1")).child(div().flex_1())
     .child(powerBar(opts.power ?? 0, false)).child(face).child(minButton("+", opts.onMin));
 }
 
 export function panel(list, party = false, opts = {}) {
-  const sw = 84, rh = 56, ds = 3;
+  const sw = 84, rh = 68, ds = 3;   // rh: room for the name under each desk
   const ship = opts.ship ?? null;                     // null, or the explosion's stage (0, 1)
   const m = opts.m ?? null;
   const dev = opts.dev ?? null;
   const { level, mood } = effectiveMood(list, m, dev, ship);
   const panic = list.some((a) => a.status === "blocked");
   if (opts.min) return minimised(opts.min, list, level, mood, panic && mood !== "power", opts);
-  const working = list.filter((a) => a.status === "working").length;
+  const { working, total } = headcount(list);              // sub-agents count too
   const devW = DEV_W * ds, devH = DEV_H * ds, cornerH = devH + 26;
-  const markAddr = mood === "pointAtBlocked" ? m.longestBlockedAddr : mood === "welcome" ? m.welcomeAddr
-    : mood === "streak" ? m.streakAddr : mood === "areYouSure" ? m.aysAddr : null;
-  const name = list.find((a) => a.address === markAddr)?.tab_name ?? "";
+  const markAddr = deskOf(mood === "pointAtBlocked" ? m.longestBlockedAddr : mood === "welcome" ? m.welcomeAddr
+    : mood === "streak" ? m.streakAddr : mood === "areYouSure" ? m.aysAddr : null);   // a sub-agent's: its parent's desk
+  const marked = list.find((a) => a.address === markAddr), name = marked ? tabName(marked) : "";
   const levelUp = (m?.fx?.levelUp ?? 0) > 0;          // a warm flash on reaching level 3
   const glow = levelUp ? "#ffd27a77" : ["#ffb06a10", "#ffb06a22", "#ff8a6a30", "#ff5a5a44"][level];
   const o = options();
@@ -181,7 +186,7 @@ export function panel(list, party = false, opts = {}) {
     .child(h_flex().id("saw-head").h(opts.label ? 30 : 23).w_full().flex_none().px(8).gap(6).items_center().cursor_pointer()
       .bg(opts.label ? "#6b3f1f" : "#8796b0").border_b(3).border_color("#7a4a28")
       .when(!!opts.toggle, (e) => e.on_click((_e, cx) => opts.toggle(cx)))
-      .child(txt(opts.label ?? `${working}/${list.length} AT IT`, opts.label ? 10 : 12, "#fff8e1"))
+      .child(txt(opts.label ?? `${working}/${total} AT IT`, opts.label ? 10 : 12, "#fff8e1"))
       .child(div().flex_1())
       // the power bar: fills with working-agent seconds, POWER! when full
       .child(powerBar(opts.power ?? 0, false))

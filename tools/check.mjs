@@ -32,7 +32,7 @@ const LINES_OF = (k) => LINES[k] ?? [];
 const { clock, world, makeCx, reseed, texts, ids, count, walk, sendCommand } = S;
 
 // Intended differences from the golden (new features), and the element budget headroom.
-const ALLOWED = { newChips: ["power", "petPoke", "canKnock"], newOneShots: ["powerUp", "petPoke"], newDemoStates: 1 };
+const ALLOWED = { newChips: ["power", "petPoke", "canKnock", "subagent"], newOneShots: ["powerUp", "petPoke"], newDemoStates: 2 };
 const BUDGET_HEADROOM = 60;
 
 // ---- harness ----------------------------------------------------------------
@@ -877,6 +877,22 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (label("a1") !== "12m" || label("a3") !== "<1m") fails.push(`done label: done 12m and 30s ago should read 12m and <1m, got ${label("a1")} ${label("a3")}`);
   if (label("a0") != null || label("a2") != null) fails.push("done label: only done desks get one");
   noErr(t, "done label");
+
+  // Looked at but not answered: Herdr turns done into idle, the label stays (still counting from when it finished),
+  // across a restart too; it goes once the agent works again, and a plain idle never gets one.
+  const R2 = R.trackWaiting({ a: 5, b: 6 }, [{ address: "a", status: "idle" }, { address: "b", status: "working" }, { address: "c", status: "done" }, { address: "d", status: "idle" }], () => 9);
+  if (JSON.stringify(R2) !== '{"a":5,"c":9}') fails.push(`waiting: kept through idle, cleared by work, set on done, got ${JSON.stringify(R2)}`);
+  const at = (o, sts2, a) => { const t2 = render(o, sts2); let v = null; walk(t2, (e) => { if (e.idv === `pt-${a}`) v = e.text; }); return v; };
+  S.advance(3 * MIN);
+  world.hcGet.a1 = { status: { state: "idle" }, status_ms: clock.now };    // you looked: done -> idle, just now
+  const seen = ["working", "idle", "idle", "done"];
+  world.hcLs = { terminals: seen.map((status, i) => ({ address: `a${i}`, state: "live", status, name: `t${i}` })) };
+  S.advance(10000); await S.settle(); await S.settle();
+  if (at(o, seen, "a1") !== "15m") fails.push(`waiting: looked at but not answered should keep counting from the finish (15m), got ${at(o, seen, "a1")}`);
+  const o2 = new Office(); o2.init(world.props, makeCx());                // a restart keeps it
+  if (at(o2, seen, "a1") !== "15m") fails.push(`waiting: should survive a restart, got ${at(o2, seen, "a1")}`);
+  at(o, ["working", "working", "idle", "done"], "a1");
+  if (at(o, seen, "a1") != null) fails.push("waiting: once it works again (you answered) the label should go");
 }
 
 // ---- the can, the popcorn, clicking a pet ------------------------------------------
@@ -939,6 +955,138 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   c.fire("petPoke", makeCx());
   if (!(c.m.petSay?.name && c.m.petSay?.line) || !(c.m.petPoke > 0)) fails.push("pets: the dev petPoke chip should poke a pet");
   noErr(tc, "pet click");
+}
+
+// ---- desk names ----------------------------------------------------------------------
+{
+  // Value: protects=every desk is labelled under its chair (through screenshot mode's renames when it's on) with its tab's name if given (Herdr's numbers don't count), else
+  // its space's, else the program's, else the terminal,
+  // cut to 15 characters; fails_when=labels vanish (the old row-height gate hid them) or the fallback breaks; why_new=desks
+  // had no visible name; seam=none; no_claim=how the text looks in Herdr
+  const P = await import(pathToFileURL(join(MOD, "names.js")).href);
+  const names = [{ tab_name: "build", space_name: "proj" }, { tab_name: "2", space_name: "football-shares-frontend" },
+    { tab_name: "", program: { name: "Claude Code" } }, { address: "t9" }].map(P.deskName);
+  if (JSON.stringify(names) !== '["build","football-shares","Claude Code","t9"]') fails.push(`names: a given tab name, else the space, else program, else terminal, 15 characters, got ${JSON.stringify(names)}`);
+  const { o } = mount();
+  const t = render(o, ["working", "idle", "done"]);
+  const shown = ["a0", "a1", "a2"].map((a) => { let v = null; walk(t, (e) => { if (e.idv === `pn-${a}`) v = e.text; }); return v; });
+  if (shown.join(",") !== "t0,t1,t2") fails.push(`names: every desk should show its name, got ${shown}`);
+
+  // Screenshot mode's renames (shared "privacy"): an aliased phrase is swapped, a hidden name without an alias gets the
+  // stand-in ("Space N", the program's name for a tab), and with the mode off or absent every name shows as it is.
+  world.spaces = [{ id: "s1", name: "topstrike", folder: "", machine: null, tabs: [{ id: "b1", name: "1" }] },
+    { id: "s2", name: "acme-secret", folder: "", machine: null, tabs: [{ id: "b2", name: "acme deploy" }] },
+    { id: "s3", name: "open", folder: "", machine: null, tabs: [{ id: "b3", name: "topstrike api" }] }];
+  const live = [{ address: "x1", space: "s1", space_name: "topstrike", tab: "b1", tab_name: "1", status: "working", program: { name: "Claude Code" }, focused: false },
+    { address: "x2", space: "s2", space_name: "acme-secret", tab: "b2", tab_name: "acme deploy", status: "idle", program: { name: "Claude Code" }, focused: false },
+    { address: "x3", space: "s3", space_name: "open", tab: "b3", tab_name: "topstrike api", status: "idle", program: { name: "Codex" }, focused: false }];
+  const privacy = { on: true, hidden: [], phrases: [{ text: "topstrike", alias: "alt" }, { text: "acme", alias: "" }] };
+  const labels = () => { world.agents = live; const t = o.render(); return live.map((a) => { let v = null; walk(t, (e) => { if (e.idv === `pn-${a.address}`) v = e.text; }); return v; }).join(","); };
+  world.shared.privacy = privacy;
+  if (labels() !== "alt,Space 2,alt api") fails.push(`names: screenshot mode on should show its renames, got ${labels()}`);
+  if (P.tabName(live[1]) !== "Claude Code" || P.spaceLabel(live[0]) !== "alt") fails.push(`names: a hidden tab with no alias shows the program, got ${P.tabName(live[1])} / ${P.spaceLabel(live[0])}`);
+  const loose = [P.tabName({ address: "t7", tab_name: "topstrike box" }), P.tabName({ address: "t8", tab_name: "acme box", program: { name: "zsh" } }), P.spaceLabel({ space_name: "acme-x" })].join(",");
+  if (loose !== "alt box,zsh,Space") fails.push(`names: a terminal with no tab or space (a helper) still gets the renames, got ${loose}`);
+  world.shared.privacy = { ...privacy, hidden: ["space:s3"] };
+  if (labels().split(",")[2] !== "Space 3") fails.push(`names: a space hidden by hand hides its tabs' names too, got ${labels()}`);
+  world.shared.privacy = { ...privacy, on: false };
+  if (labels() !== "topstrike,acme deploy,topstrike api") fails.push(`names: screenshot mode off should show the real names, got ${labels()}`);
+  delete world.shared.privacy;
+  if (labels() !== "topstrike,acme deploy,topstrike api") fails.push(`names: without screenshot mode the real names show, got ${labels()}`);
+  world.spaces = [];
+}
+
+// ---- demo-<n> ----------------------------------------------------------------------
+{
+  // Value: protects=`demo-<n>` opens the demo at state n (for recording one state; out of range is ignored) and the
+  // sub-agents demo state draws its 2/5; fails_when=the command or the state breaks; why_new=nothing else jumps the demo;
+  // seam=none; no_claim=Herdr's real timing
+  await S.settle(); S.dropCommandWaiters();             // earlier mounts' loops start waiting on the first await: let them, then drop them
+  const { o } = mount();
+  const send = async (c) => { S.sendCommand(c); await S.settle(); };
+  await send("demo-99");
+  if (o.demoAt != null) fails.push("demo-n: out of range should be ignored");
+  await send("demo-27"); jump(1000);
+  const t = render(o, []);
+  const head = texts(t).find((x) => /^DEMO \d/.test(x)) ?? "";
+  let badge = null; walk(t, (e) => { if (e.idv === "psub-demo-0") walk(e, (k) => { if (k.text != null) badge = k.text; }); });
+  if (!head.startsWith("DEMO 27/") || !head.includes("Sub-agents") || badge !== "2/5") fails.push(`demo-n: demo-27 should show the sub-agents state with 2/5, got "${head}" ${badge}`);
+  await send("demo-2"); jump(1000);
+  const head2 = texts(render(o, [])).find((x) => /^DEMO \d/.test(x)) ?? "";
+  if (!head2.startsWith("DEMO 2/")) fails.push(`demo-n: demo-2 should jump back to state 2, got "${head2}"`);
+}
+
+// ---- Claude Code sub-agents ----------------------------------------------------------
+{
+  // Value: protects=sub-agents from the hook: no desk of their own but a done/total badge on the parent's desk (2/5), counted
+  // in the header and as working (level, power bar), welcomed, done when stopped (the finish), the batch kept until the last
+  // one stops then gone 8s later, dropped after an hour without a stop, and the hook script sending sub-start/sub-stop with
+  // the terminal and agent id; fails_when=any of those breaks; why_new=nothing else knows about sub-agents; seam=none;
+  // no_claim=Claude Code really firing the hooks (sample stdin)
+  const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
+  if (JSON.stringify(R.parseSubCommand("sub-start-t8-abc123")) !== '{"verb":"start","parent":"t8","id":"abc123"}' || R.parseSubCommand("sub-start-t8") || R.parseSubCommand("sub-go-t8-x") || R.parseSubCommand("sub-stop-t8-a b"))
+    fails.push("subs: sub-start/stop-<terminal>-<id> parse, anything else doesn't");
+  // p: one still running keeps its finished sibling; q: all done, last at 1000 -> gone by 9000; r: last done at 8000 -> kept
+  const kept = Object.keys(R.pruneSubs({ a: { parent: "p", at: 0 }, b: { parent: "p", at: 0, doneAt: 10 }, c: { parent: "q", at: 0, doneAt: 1000 },
+    d: { parent: "r", at: 0, doneAt: 100 }, e: { parent: "r", at: 0, doneAt: 8000 } }, 9000)).join("");
+  if (kept !== "abde") fails.push(`subs: prune keeps a batch while any runs and until 8s after its last stop, got ${kept}`);
+  if (Object.keys(R.pruneSubs({ a: { parent: "p", at: 0 }, b: { parent: "p", at: 0, doneAt: 10 } }, 60 * MIN)).length) fails.push("subs: one never stopped should go after an hour, and not hold its batch");
+  const folded = R.foldSubs([{ address: "x" }, { address: "y~1", sub: true, parent: "y", status: "done" }, { address: "y" }, { address: "y~2", sub: true, parent: "y", status: "working" }, { address: "z~1", sub: true, parent: "z", status: "working" }]);
+  if (JSON.stringify(folded) !== '[{"address":"x"},{"address":"y","subs":{"done":1,"total":2,"running":1}}]') fails.push(`subs: fold puts them on the parent's desk, got ${JSON.stringify(folded)}`);
+  if (JSON.stringify(R.headcount(folded)) !== '{"working":1,"total":3}') fails.push(`subs: running sub-agents count in the headcount, got ${JSON.stringify(R.headcount(folded))}`);
+
+  S.dropCommandWaiters();
+  const { o } = mount();
+  render(o, ["idle", "idle"]); jump(20000); render(o, ["idle", "idle"]);
+  const send = async (c) => { S.sendCommand(c); await S.settle(); };
+  const badge = (t) => { let s = null; walk(t, (e) => { if (e.idv === "psub-a0") walk(e, (k) => { if (k.text != null) s = k.text; }); }); return s; };
+  await send("sub-start-a0-aaa111"); await send("sub-start-a0-bbb222");
+  let t = render(o, ["idle", "idle"]);
+  const desks = ids(t).filter((x) => /^pd-/.test(x)).join(",");
+  if (desks !== "pd-a0,pd-a1") fails.push(`subs: sub-agents get no desk of their own, got ${desks}`);
+  if (badge(t) !== "0/2") fails.push(`subs: a0's desk should say 0/2, got ${badge(t)}`);
+  if (!texts(t).some((x) => x === "2/4 AT IT")) fails.push(`subs: the header should count them, got ${texts(t).find((x) => / AT IT$/.test(x))}`);
+  if (!ids(t).some((x) => x.startsWith("pdev-head-2-"))) fails.push(`subs: two working sub-agents should put him at level 2, got ${ids(t).find((x) => x.startsWith("pdev-head-"))}`);
+  if (!(o.m.newAgentWelcome > 0)) fails.push("subs: a new sub-agent should get the welcome");
+  if (!ids(t).includes("pa-a0-welcome")) fails.push(`subs: the welcome should point at the parent's desk, got ${ids(t).filter((x) => x.startsWith("pa-"))}`);
+  const p0 = o.m.power; S.advance(1000);
+  if (o.m.power - p0 !== 2) fails.push(`subs: two sub-agents working should charge the bar 2 a second, got ${o.m.power - p0}`);
+  await send("sub-stop-a0-aaa111");
+  for (const k of ["finishPump", "poke"]) o.m[k] = 0;
+  render(o, ["idle", "idle"]); t = render(o, ["idle", "idle"]);
+  if (badge(t) !== "1/2" || !(o.m.finishPump > 0)) fails.push(`subs: one stopped should read 1/2 and set off the finish, got ${badge(t)} pump=${o.m.finishPump}`);
+  S.advance(9000); t = render(o, ["idle", "idle"]);
+  if (badge(t) !== "1/2") fails.push(`subs: a finished one stays counted while its sibling runs, got ${badge(t)}`);
+  await send("sub-stop-a0-bbb222"); t = render(o, ["idle", "idle"]);
+  if (badge(t) !== "2/2") fails.push(`subs: all stopped should read 2/2, got ${badge(t)}`);
+  S.advance(9000); t = render(o, ["idle", "idle"]);
+  if (badge(t) != null) fails.push("subs: the badge should go 8s after the last one stops");
+  await send("sub-stop-a0-zzz999");                     // never started: ignored
+  if (o.subs.zzz999) fails.push("subs: a stop for an unknown sub-agent should be ignored");
+  await send("sub-start-a0-ccc333");
+  jump(61 * MIN); S.advance(1000); t = render(o, ["idle", "idle"]);
+  if (badge(t) != null) fails.push("subs: a sub-agent never stopped should go after an hour");
+  await send("sub-start-a1-ddd444"); t = render(o, ["idle", "idle"]);
+  if (ids(t).filter((x) => /^pd-/.test(x)).join(",") !== "pd-a1,pd-a0") fails.push("subs: a desk with sub-agents running counts as active (moves to the front)");
+  noErr(t, "subs");
+
+  // The hook script: sample stdin in, the command to a stand-in herdr-app out.
+  const { mkdtempSync, writeFileSync: wf, readFileSync: rf, chmodSync, existsSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { spawnSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "saw-hook-")), out = join(dir, "sent");
+  wf(join(dir, "herdr-app"), `#!/bin/sh\necho "$@" >> "${out}"\n`); chmodSync(join(dir, "herdr-app"), 0o755);
+  const hook = join(here, "..", "sitandwatch", "hooks", "sitandwatch-subagents.py");
+  const runHook = (data, term) => spawnSync("python3", [hook], { input: JSON.stringify(data), env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, HC_TERMINAL_ID: term ?? "" } });
+  runHook({ hook_event_name: "SubagentStart", agent_id: "a1b2-c3", agent_type: "general-purpose" }, "t8");
+  runHook({ hook_event_name: "SubagentStop", agent_id: "a1b2-c3" }, "t8");
+  runHook({ hook_event_name: "SubagentStart", agent_id: "x" }, "");          // not in Herdr: nothing
+  runHook({ hook_event_name: "Stop", agent_id: "x" }, "t8");                 // another event: nothing
+  const r = runHook("not json", "t8");
+  const sent = existsSync(out) ? rf(out, "utf8").trim().split("\n") : [];
+  if (JSON.stringify(sent) !== JSON.stringify(["do sitandwatch.sub-start-t8-a1b2c3", "do sitandwatch.sub-stop-t8-a1b2c3"]) || r.status !== 0)
+    fails.push(`subs: the hook should send exactly the start and stop, quietly ignoring the rest, sent ${JSON.stringify(sent)} exit ${r.status}`);
+  rmSync(dir, { recursive: true, force: true });
 }
 
 const budget = g.budget.max + BUDGET_HEADROOM, over = snap.demo.counts.map((n, i) => [i + 1, n]).filter(([, n]) => n > budget);
