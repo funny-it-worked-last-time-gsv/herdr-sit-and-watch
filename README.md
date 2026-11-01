@@ -46,7 +46,7 @@ Each of these is one state of the demo tour (`herdr-app do sitandwatch.demo-<n>`
 | 10+ agents seen this session | Eyes darting about. "how many are there?" |
 | The power bar fills | The bar in the header fills with every second an agent works (20 agent-minutes: about 7 with three at it) and drains slowly when nothing runs. Full: he leaps up, "POWER!", confetti, the pets wide awake. Then it starts again. |
 | Desks | Each labelled with its tab's name, or its space's (the project) while the tab has Herdr's number. In last-active order: whoever's working first, then the one that stopped most recently. A finished agent shows how long it's been waiting on its screen (`12m`) until you answer it: looking isn't enough, it goes once the agent works again. A desk left alone for an hour gets a cobweb; after 8 hours it's covered, screen dusty. |
-| Busy desks | A working desk's screen scrolls a little log (Read, Edit, Bash...; texture, not its real output). One working desk at a time says what it's on in a bubble: its terminal title (Claude Code sets it to the task), renamed by screenshot mode when that's on. |
+| Busy desks | A working desk's screen scrolls a little log (Read, Edit, Bash...; texture, not its real output). One working desk at a time says what it's on in a bubble: with the activity hook, what it's really doing right now ("Editing main.js", "Running npm test"); otherwise its terminal title (Claude Code sets it to the task). Renamed by screenshot mode when that's on. |
 | Claude Code sub-agents | Shown on their session's desk as finished/total (`2/5`: five started, two finished), yellow while any run, green when all are done, gone 8 seconds later. They count as working agents: his level, the header count, the power bar, the welcome and the finish. Needs the sub-agent hook, see below. |
 | The pets, any time he's there | Buddy, Snowy and Simba sit by the chair giving him a half-lidded side-eye. Meltdown: Buddy covers his eyes. Standing ovation: the cats turn their backs. Something ships: Buddy howls. After 10pm Simba's out. The loudest moment wins. |
 | One crashed or needs you (popcorn spilled) | Buddy goes for the popcorn and eats it down over a minute. |
@@ -129,7 +129,7 @@ Ask your agent to add this mod (it reads every file first), or by hand:
    copy. Keep the id `sitandwatch`. To drag the panel's height by the line above it, give the `sidebar`
    column `"resizable": true` (Herdr's own layouts ship it off); or pick a height in Options.
 
-Two optional Claude Code hooks live in `sitandwatch/hooks/`:
+Three optional Claude Code hooks live in `sitandwatch/hooks/`:
 
 - **Ship:** the explosion on `git push`, `gh pr merge` or a production `vercel` deploy (setup in
   [RECIPE.md](sitandwatch/RECIPE.md#ship-hook)).
@@ -143,6 +143,15 @@ Two optional Claude Code hooks live in `sitandwatch/hooks/`:
   ```
   It runs `herdr-app do sitandwatch.sub-start-<terminal>-<agent id>` (or `sub-stop-...`), using the
   `HC_TERMINAL_ID` Herdr gives each terminal, and never blocks or fails Claude Code.
+- **Activity:** the desk bubbles say what each session is really doing. Copy `sitandwatch-activity.py`
+  to `~/.claude/hooks/` and add it to `~/.claude/settings.json`:
+  ```json
+  "PreToolUse": [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/sitandwatch-activity.py", "async": true, "timeout": 10 }] }]
+  ```
+  Before each tool call it sends a short phrase (`Editing main.js`, `Running npm test`, `Searching
+  useAuth`: a file's name, never its path or contents; a command's first three words) as
+  `herdr-app do sitandwatch.act-<terminal>-<base64url>`. One quick `herdr-app` run per tool call, in
+  the background; it never blocks or fails Claude Code.
 
 Delete the folder and that block to remove it (restore it first if minimised). It makes no network requests, runs no programs other than
 `hc ls` and `hc get` (to see background agents, crashes and how long each agent has been busy) and

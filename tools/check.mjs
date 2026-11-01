@@ -1125,6 +1125,58 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   rmSync(dir, { recursive: true, force: true });
 }
 
+// ---- real activity: the PreToolUse hook → the desk's bubble ------------------------------------------
+{
+  // Value: protects=the activity hook turning tool calls into short phrases (Editing/Reading <file>, Running <cmd>,
+  //   Searching <pattern>, Delegating), sent base64url with the terminal and decoded by the panel; a desk's bubble saying
+  //   its fresh activity (under a minute) through screenshot mode, else its title; malformed or non-ASCII commands
+  //   refused; fails_when=the hook's phrase, encoding or event filter changes, the panel stops decoding, a stale act still
+  //   shows, or a renamed project leaks; why_new=new feature; seam=none (a stand-in herdr-app on PATH, as for the
+  //   sub-agent hook); no_claim=Claude Code firing PreToolUse in a real session (checked live)
+  const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
+  const { mkdtempSync, writeFileSync: wf, readFileSync: rf, chmodSync, existsSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { spawnSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "saw-act-")), out = join(dir, "sent");
+  wf(join(dir, "herdr-app"), `#!/bin/sh\necho "$@" >> "${out}"\n`); chmodSync(join(dir, "herdr-app"), 0o755);
+  const hook = join(here, "..", "sitandwatch", "hooks", "sitandwatch-activity.py");
+  const run = (data, term = "t8") => spawnSync("python3", [hook], { input: typeof data === "string" ? data : JSON.stringify(data), env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, HC_TERMINAL_ID: term } });
+  const pre = (tool_name, tool_input) => ({ hook_event_name: "PreToolUse", tool_name, tool_input });
+  run(pre("Edit", { file_path: "/home/x/proj/src/main.js" }));
+  run(pre("Bash", { command: "npm   test --  --watch=false extra" }));
+  run(pre("Read", { file_path: "/a/README.md" }));
+  run(pre("Grep", { pattern: "useAuth" }));
+  run(pre("Task", { description: "Review the diff" }));
+  run(pre("Bash", { command: "echo " + "x".repeat(80) }));
+  run(pre("Edit", { file_path: "/a/b.js" }), "");                 // not in Herdr: nothing
+  run({ hook_event_name: "PostToolUse", tool_name: "Edit" });     // another event: nothing
+  const bad = run("not json");
+  const sent = existsSync(out) ? rf(out, "utf8").trim().split("\n") : [];
+  const decoded = sent.map((l) => R.parseActCommand(l.replace(/^do sitandwatch\./, "")));
+  const texts6 = decoded.map((d) => d && `${d.term}:${d.text}`);
+  const want = ["t8:Editing main.js", "t8:Running npm test --", "t8:Reading README.md", "t8:Searching useAuth", "t8:Delegating: Review the diff", "t8:Running echo..."];
+  if (JSON.stringify(texts6) !== JSON.stringify(want) || bad.status !== 0) fails.push(`act: the hook should send these phrases and nothing else, got ${JSON.stringify(texts6)} exit ${bad.status}`);
+  if (sent.some((l) => !/^do sitandwatch\.act-t8-[A-Za-z0-9_-]+$/.test(l))) fails.push(`act: commands should be letters, digits, - and _ only, got ${JSON.stringify(sent)}`);
+  rmSync(dir, { recursive: true, force: true });
+  // The panel refuses anything malformed.
+  const refused = ["act-t8-", "act-t8-!!", "act--aGk", "act-t8-" + Buffer.from("tab\there").toString("base64url"), "act-t8-" + "a".repeat(81)].map(R.parseActCommand);
+  if (refused.some(Boolean)) fails.push(`act: malformed or non-ASCII act commands should be refused, got ${JSON.stringify(refused)}`);
+  // The bubble: fresh activity first (renamed by screenshot mode), the title after a minute.
+  await S.settle(); S.dropCommandWaiters();
+  const { o } = mount();
+  const send = async (c) => { S.sendCommand(c); await S.settle(); await S.settle(); };
+  world.shared.privacy = { on: true, hidden: [], phrases: [{ text: "secretproj", alias: "proj" }] };
+  const agent = () => [{ address: "t8", status: "working", tab_name: "build", title: "✳ Fix the login bug", program: null, focused: false }];
+  clock.now = Math.ceil(clock.now / 7000) * 7000 + 500;
+  await send("act-t8-" + Buffer.from("Editing secretproj.js").toString("base64url"));
+  world.agents = agent(); let t = o.render();
+  const bubble = () => { let v = null; walk(t, (e) => { if (e.idv === "psay-t8") walk(e, (k) => { if (k.text != null) v = k.text; }); }); return v; };
+  if (bubble() !== "Editing proj.js") fails.push(`act: the bubble should say the fresh activity, renamed by screenshot mode, got ${bubble()}`);
+  clock.now += 63000; clock.now = Math.ceil(clock.now / 7000) * 7000 + 500; world.agents = agent(); t = o.render();
+  if (bubble() !== "Fix the login bug") fails.push(`act: after a minute the bubble should go back to the title, got ${bubble()}`);
+  delete world.shared.privacy; world.agents = [];
+}
+
 // ---- minimise: refusals on the way back, async and thrown refusals, a restart ------------
 {
   // Value: protects=minimise undoing itself whenever Herdr refuses: a refused restore puts the strip back (still
