@@ -142,11 +142,24 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - **An agent is blocked**: the mood drops to at most level 1, a sad mouth, a tear, the popcorn
   spilled on the floor, `wah wah`, `they need me?!`, `noooo`.
 - **Clicking a desk** focuses that agent (`agent.focus`).
-- **Demo**: clicking the header, or `herdr-app do sitandwatch.demo`, cycles 27 labelled states
-  every 5s with fake desks: the three levels, finished, blocked, shipped, one per mood, the empty
-  chair, then power, cobwebs and sub-agents. `demo-<n>` opens it at state n (1-based; out of range is
-  ignored), which is how the GIFs in `media/` were recorded: `demo-<n>`, then `herdr-app shot` about
-  ten times a second for 4.5s, each frame cropped to the panel. Again (`demo`) to stop.
+- **Demo**: clicking the header, or `herdr-app do sitandwatch.demo`, plays `STORY` in `main.js` on a
+  loop (`demoMode: "story"`): 11 captioned scenes, each a `DEMO_STATES`-style row plus its length in
+  ms (about 52s in all): quiet (the empty chair), work starts, another joins (welcome), sub-agents
+  spawn (0/2), ramping up (0/5), sub-agents finish (2/5, fist pump), all done (5/5, burst), shipped (PR
+  MERGED, one still working so he stays), winding down, dozing, asleep. `sceneAt()` picks the scene.
+  Each fake desk takes the tab, space, program and title of the real agent at that place, so it is
+  named like the live panel (screenshot mode included), else `bot N`. Again (`demo`) to stop.
+- **The tour**: `demo-<n>` (`demoMode: "tour"`) opens the 27 labelled `DEMO_STATES`, 5s each: the three
+  levels, finished, blocked, shipped, one per mood, the empty chair, then power, cobwebs and
+  sub-agents (1-based; out of range is ignored). The GIFs in `media/` were recorded from it:
+  `demo-<n>`, then `herdr-app shot` about ten times a second for 4.5s, each frame cropped to the panel.
+- **Busy desks**: a working screen shows two lines of 8px text cycling with `frames()`, tool names
+  (`#7ec8e3`) over details (`#7ee0a0`), from `logFrames()` rotated per desk (texture, not real output).
+  `talker()` gives one working desk at a time a 7s turn, shown for the first 3.5s, a bubble
+  (`psay-<address>`, white, 1px ink border, 10px) over its monitor saying `sayText()`: its terminal
+  title without the status glyph (through `tabLabel`, so screenshot mode renames it), up to 20
+  characters cut at a word, or a made-up task from `DEMO_TASKS`. The 1s timer re-renders when a turn
+  starts or ends.
 - **Developer mode**: `herdr-app do sitandwatch.dev` (remembered) shows a strip under the header with
   the mood, level, counts and durations it's picked from, and the live one-shots. Its `buttons` chip
   opens rows to force a level, pin a mood (one-shots still take over while they run) or fire any

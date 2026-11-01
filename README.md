@@ -14,7 +14,7 @@ work. The more of them are working, the more excited you get. See
 <tr><td align="center" valign="top"><img src="sitandwatch/media/empty-chair.gif" width="250" alt="Nothing running: the pets take the chair"><br>Nothing running: the pets take the chair</td><td></td><td></td></tr>
 </table>
 
-Each of these is one state of the demo (click the header). Recorded in Herdr; the header says which.
+Each of these is one state of the demo tour (`herdr-app do sitandwatch.demo-<n>`). Recorded in Herdr; the header says which.
 
 ## What he does
 
@@ -43,6 +43,7 @@ Each of these is one state of the demo (click the header). Recorded in Herdr; th
 | 10+ agents seen this session | Eyes darting about. "how many are there?" |
 | The power bar fills | The bar in the header fills with every second an agent works (20 agent-minutes: about 7 with three at it) and drains slowly when nothing runs. Full: he leaps up, "POWER!", confetti, the pets wide awake. Then it starts again. |
 | Desks | Each labelled with its tab's name, or its space's (the project) while the tab has Herdr's number. In last-active order: whoever's working first, then the one that stopped most recently. A finished agent shows how long it's been waiting on its screen (`12m`) until you answer it: looking isn't enough, it goes once the agent works again. A desk left alone for an hour gets a cobweb; after 8 hours it's covered, screen dusty. |
+| Busy desks | A working desk's screen scrolls a little log (Read, Edit, Bash...; texture, not its real output). One working desk at a time says what it's on in a bubble: its terminal title (Claude Code sets it to the task), renamed by screenshot mode when that's on. |
 | Claude Code sub-agents | Shown on their session's desk as finished/total (`2/5`: five started, two finished), yellow while any run, green when all are done, gone 8 seconds later. They count as working agents: his level, the header count, the power bar, the welcome and the finish. Needs the sub-agent hook, see below. |
 | The pets, any time he's there | Buddy, Snowy and Simba sit by the chair giving him a half-lidded side-eye. Meltdown: Buddy covers his eyes. Standing ovation: the cats turn their backs. Something ships: Buddy howls. After 10pm Simba's out. The loudest moment wins. |
 | One crashed or needs you (popcorn spilled) | Buddy goes for the popcorn and eats it down over a minute. |
@@ -55,8 +56,10 @@ Mostly Claude Code agents get a knowing nod, mostly Codex a side-eye, a mix "the
 From level 2 there's a can on the armrest, and his scarf leans toward the colour of whoever's doing
 most of the work. Each state has a pool of lines, shuffled per session. Click him and he talks back.
 
-Click the header, or run `herdr-app do sitandwatch.demo`, to cycle through all 27 states with labels
-(`demo-<n>` opens it at state n).
+Click the header, or run `herdr-app do sitandwatch.demo`, to play the demo: a day at the desks, on a loop
+(about 50s). It's quiet, work starts, agents and sub-agents ramp up and finish, a PR merges, then he
+winds down, dozes and leaves the chair to the pets. The desks take your real agents' names where there
+are some. Click again to stop. `demo-<n>` opens the labelled tour of all 27 states at state n.
 Click a desk to jump to that agent.
 
 ### Minimise

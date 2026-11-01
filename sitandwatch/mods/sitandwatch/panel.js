@@ -1,8 +1,8 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run } from "herdr";
-import { ink, SCREEN, r, txt, look, bot, spectator, stance, pets, explosion, miniFace, DEV_W, DEV_H } from "./art.js";
-import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES, FLOORS, cobwebLevel, DESK_AGES, sinceLabel, POWER_FULL, POWER_STEPS, powerShown, headcount, deskOf } from "./rules.js";
+import { ink, SCREEN, r, txt, look, bot, spectator, stance, pets, explosion, miniFace, DEV_W, DEV_H, hash } from "./art.js";
+import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES, FLOORS, cobwebLevel, DESK_AGES, sinceLabel, POWER_FULL, POWER_STEPS, powerShown, headcount, deskOf, logFrames } from "./rules.js";
 import { deskName, tabName } from "./names.js";
 import { options, openOptions } from "./options.js";
 
@@ -85,10 +85,14 @@ function cobwebs(sw, level, addr) {
   return out;
 }
 
-function desk(a, x, y, sw, rh, mark = null, idleMs = 0) {
-  const scr = r(Math.round(sw / 2) - 16, 4, 32, 20, "#2b2f3a").child(r(2, 2, 28, 16, SCREEN[a.status] ?? SCREEN.idle)
-    .when(a.status === "working", (e) => e.children([0, 1, 2].map((i) => r(4, 4 + i * 4, 6, 2, "#7ee0a0")
-      .id(`pc-${a.address}-${i}`).loop("width", { from: 4, to: 20 - i * 4, period: 500 + i * 230 }))))
+function desk(a, x, y, sw, rh, mark = null, idleMs = 0, say = null) {
+  // working: a little log scrolls on the screen (tool names, then details), two text elements
+  const log = logFrames(hash(a.address) % 7);
+  const scr = r(Math.round(sw / 2) - 16, 4, 32, 20, "#2b2f3a").child(r(2, 2, 28, 16, SCREEN[a.status] ?? SCREEN.idle).overflow_hidden()
+    .when(a.status === "working", (e) => e.children([
+      txt(log.tools[0], 8, "#7ec8e3").absolute().left(2).top(0).id(`pc-${a.address}-0`).frames(log.tools, 900),
+      txt(log.detail[0], 8, "#7ee0a0").absolute().left(2).top(8).id(`pc-${a.address}-1`).frames(log.detail, 650),
+    ]))
     .when(a.status === "blocked", (e) => e.child(txt("!", 12, "#fff8e1").absolute().left(11).top(2).id(`pb-${a.address}`).loop("opacity", { from: 0.2, to: 1, period: 600 }))));
   const body = bot(look(a), 1.5, a.status === "done", a.status === "working", `pb-${a.address}`).id(`ps-${a.address}`);
   if (a.status === "working") body.loop("top", { from: 0, to: -1, period: 320 });
@@ -109,6 +113,9 @@ function desk(a, x, y, sw, rh, mark = null, idleMs = 0) {
       return e.child(txt(label, 10, "#cfe0ff").absolute().left(Math.round(sw / 2) - Math.round(label.length * 2.5)).top(9).id(`pt-${a.address}`));
     })
     .when(!!mark && mark !== "areYouSure", (e) => e.child(arrow(sw, mark, a.address)))
+    // its turn to say what it's doing: a small bubble over the monitor
+    .when(!!say, (e) => e.child(div().absolute().left(0).top(-2).w(sw).flex().justify_center()
+      .child(div().id(`psay-${a.address}`).px(2).bg("#ffffff").border(1).border_color(ink).child(txt(say, 10, ink)))))
     // the meme: the agent asks, he answers from the chair
     .when(mark === "areYouSure", (e) => e.child(div().absolute().left(0).top(0).w(sw).flex().justify_center()
       .child(div().px(3).bg("#ffffff").border(1).border_color(ink).child(txt("Are you sure?", 10, ink)))))
@@ -199,7 +206,8 @@ export function panel(list, party = false, opts = {}) {
       .when(!!opts.onMin, (e) => e.child(minButton("_", opts.onMin))))
     .when(!!dev, (e) => e.child(devStrip(dev, mood, level, m, opts.power ?? 0)))
     .child(div().id("saw-desks").flex().flex_wrap().justify_center().content_start().flex_1().w_full().overflow_hidden().pt(6)
-      .children(list.map((a) => desk(a, 0, 0, sw, rh, a.address === markAddr ? mood : null, opts.idle?.[a.address] ?? 0))))
+      .children(list.map((a) => desk(a, 0, 0, sw, rh, a.address === markAddr ? mood : null, opts.idle?.[a.address] ?? 0,
+        opts.say?.address === a.address ? opts.say.text : null))))
     .child(div().flex().justify_center().w_full().h(cornerH).flex_none().bg(glow)
       .child(div().relative().w(devW).h(cornerH)
         .child(r(-12, cornerH - 16, devW + 24, 10, "#5e1420"))
