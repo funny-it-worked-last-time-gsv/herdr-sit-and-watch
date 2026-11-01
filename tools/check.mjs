@@ -1436,6 +1436,66 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   world.layout = null; world.runs = []; world.shared[OPTKEY] = {};
 }
 
+// ---- the demo story, real names in the demo, busy desks -----------------------------------------
+{
+  // Value: protects=DEMO playing the story (quiet → work → sub-agents ramp → finish → PR merged → winding down → dozing →
+  //   asleep) on a loop while demo-<n> keeps the labelled tour; demo desks named after the real agents (else "bot N");
+  //   a working screen's log (two cycling lines); one working desk at a time saying its terminal title (or a made-up task),
+  //   through screenshot mode; fails_when=DEMO plays the tour, a scene is skipped or out of order, the names stay "bot N",
+  //   the log or the bubble goes, two desks talk at once, or a title shows unrenamed; why_new=new feature; seam=none;
+  //   no_claim=how it looks in Herdr (checked live)
+  const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
+  const headOf = (t) => texts(t).find((x) => /^DEMO \d/.test(x)) ?? "";
+  S.dropCommandWaiters();
+  const { o } = mount();
+  world.agents = [{ address: "r0", status: "working", tab_name: "build", title: "✳ Fix the login bug", program: null, focused: false }];
+  o.render(); o.toggleDemo();
+  const at = (ms) => { clock.now = o.demoAt + ms; world.agents = [{ address: "r0", status: "working", tab_name: "build", title: "✳ Fix the login bug", program: null, focused: false }]; return o.render(); };
+  const heads = [0, 5000, 9000, 13000, 17000, 22000, 26000, 31000, 36000, 40000, 46000].map((ms) => headOf(at(ms)).replace(/^DEMO (\d+)\/11 .*$/, "$1")).join(",");
+  if (heads !== "1,2,3,4,5,6,7,8,9,10,11") fails.push(`story: DEMO should play the 11 scenes in order, got ${heads}`);
+  if (!headOf(at(52000)).startsWith("DEMO 1/11")) fails.push("story: it should loop back to the start");
+  let t = at(18000);
+  let badge = null; walk(t, (e) => { if (e.idv === "psub-demo-0") walk(e, (k) => { if (k.text != null) badge = k.text; }); });
+  if (badge !== "0/5") fails.push(`story: the ramp-up scene should show 0/5 sub-agents, got ${badge}`);
+  t = at(31500);
+  if (!ids(t).some((x) => x.startsWith("pdev-") && /boom|explo|ship/i.test(x)) && !texts(t).some((x) => /PR MERGED/.test(x))) fails.push("story: the shipped scene should set off the explosion");
+  t = at(47000);
+  if (!ids(t).some((x) => x.startsWith("pet-") && x.endsWith("-curl"))) fails.push("story: the last scene should have the pets curled on the empty chair");
+  // Real names: desk 0 is "build" (the real agent there), the rest "bot N".
+  t = at(1000);
+  const nm = (a) => { let v = null; walk(t, (e) => { if (e.idv === `pn-${a}`) v = e.text; }); return v; };
+  if (nm("demo-0") !== "build" || nm("demo-1") !== "bot 2") fails.push(`story: demo desks should take the real agents' names, got ${nm("demo-0")} ${nm("demo-1")}`);
+  o.toggleDemo();
+  // demo-<n> still opens the tour.
+  await S.settle(); S.dropCommandWaiters();
+  const { o: tour } = mount();
+  const send = async (c) => { S.sendCommand(c); await S.settle(); await S.settle(); };
+  await send("demo-3"); jump(500);
+  if (!headOf(render(tour, [])).startsWith("DEMO 3/27")) fails.push(`story: demo-3 should open the 27-state tour, got "${headOf(render(tour, []))}"`);
+  tour.demoAt = null;
+
+  // Busy desks: rules.
+  if (R.talker([{ address: "a", status: "idle" }], 1000) !== null) fails.push("busy: nobody working should mean nobody talks");
+  const two = [{ address: "a", status: "working" }, { address: "b", status: "working" }, { address: "c", status: "idle" }];
+  const turns = [0, 3600, 7000, 14000].map((ms) => R.talker(two, ms)).join(",");
+  if (turns !== "a,,b,a") fails.push(`busy: working desks should take 7s turns, shown for 3.5s, got ${turns}`);
+  const says = [R.sayText("✳ Fix the login bug", 0), R.sayText("", 1), R.sayText("✳ Ship the sub-agent hook and docs", 0)];
+  if (JSON.stringify(says) !== JSON.stringify(["Fix the login bug", R.DEMO_TASKS[1], "Ship the sub-agent…"])) fails.push(`busy: sayText should strip the glyph, fill in a task and cut at a word, got ${JSON.stringify(says)}`);
+  // Busy desks: live render, with screenshot mode renaming the title.
+  const { o: live } = mount();
+  world.shared.privacy = { on: true, hidden: [], phrases: [{ text: "login", alias: "auth" }] };
+  clock.now = Math.ceil(clock.now / 7000) * 7000 + 500;
+  world.agents = [{ address: "w0", status: "working", tab_name: "build", title: "✳ Fix the login bug", program: null, focused: false }];
+  t = live.render();
+  let said = null; walk(t, (e) => { if (e.idv === "psay-w0") walk(e, (k) => { if (k.text != null) said = k.text; }); });
+  if (said !== "Fix the auth bug") fails.push(`busy: a working desk should say its title, renamed by screenshot mode, got ${said}`);
+  const logEl = S.findId(t, (x) => x === "pc-w0-0");
+  if (!logEl || !logEl.calls.some(([k]) => k === "frames")) fails.push("busy: a working screen should run a log (cycling text)");
+  clock.now += 4000; t = live.render();
+  if (ids(t).includes("psay-w0")) fails.push("busy: the bubble should go after 3.5s");
+  delete world.shared.privacy; world.agents = [];
+}
+
 // ---- the power bar: a terminal both in agents() and in hc's list counts once ---------------
 {
   // Value: protects=powerTick() and the panel list taking each address once when a terminal is both in agents() and in the

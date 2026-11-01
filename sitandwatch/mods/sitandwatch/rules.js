@@ -344,3 +344,31 @@ export function foldSubs(list) {
 }
 // A desk address for a mark: a sub-agent's is its parent's.
 export const deskOf = (addr) => (addr == null ? addr : String(addr).split("~")[0]);
+
+// ---- busy desks: a log on each working screen, and now and then one says what it's doing ----------
+// The log is texture, not the agent's real output (the mod can't read it): tool names on the top line,
+// details under, each desk starting at its own place (seed) so they don't scroll in step.
+export const LOG_TOOLS = ["Read", "Edit", "Bash", "Grep", "Write", "Glob", "Task"];
+export const LOG_DETAIL = ["thinking", "main.js", "+12 -3", "tests ok", "rules.js", "git diff", "npm run", "reading"];
+export function logFrames(seed) {
+  const rot = (xs) => xs.map((_, i) => xs[(i + seed) % xs.length]);
+  return { tools: rot(LOG_TOOLS), detail: rot(LOG_DETAIL) };
+}
+// One working desk at a time says something: a 7s turn each, shown for the first 3.5s. Returns its
+// address, or null (nobody working, or between turns).
+export const SAY_TURN_MS = 7000, SAY_SHOW_MS = 3500;
+export function talker(list, now) {
+  const working = list.filter((a) => a.status === "working");
+  if (!working.length || now % SAY_TURN_MS >= SAY_SHOW_MS) return null;
+  return working[Math.floor(now / SAY_TURN_MS) % working.length].address;
+}
+// What it says: the terminal's title (Claude Code sets it to the task) without its status glyph, at most
+// 20 characters (cut at a word, with "…"); with no title, a made-up task picked by turn.
+export const DEMO_TASKS = ["Fixing the tests", "Reading the docs", "Refactoring auth", "Writing a migration", "Reviewing the diff", "Adding dark mode", "Chasing a flaky test", "Updating the README"];
+export function sayText(title, turn) {
+  const t = String(title ?? "").replace(/^[^A-Za-z0-9]+/, "").trim();
+  const s = t || DEMO_TASKS[Math.abs(turn) % DEMO_TASKS.length];
+  if (s.length <= 20) return s;
+  const cut = s.slice(0, 20), space = cut.lastIndexOf(" ");   // whole words where it can
+  return (space >= 8 ? cut.slice(0, space) : cut.slice(0, 19)) + "…";
+}

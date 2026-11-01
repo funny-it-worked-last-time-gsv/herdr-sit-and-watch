@@ -7,7 +7,7 @@ import { LINES } from "./lines.js";
 import { panel } from "./panel.js";
 import { spaceLabel, tabLabel, tabName } from "./names.js";
 import { spaceName, tabText } from "./privacy.js";
-import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, planHeight, HEIGHT_TROUBLE, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_OPEN, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting } from "./rules.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, planHeight, HEIGHT_TROUBLE, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_OPEN, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting, talker, sayText, SAY_TURN_MS, SAY_SHOW_MS } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -60,6 +60,29 @@ const DEMO_STATES = [
   // the 8th element: sub-agents on a desk, { desk index: [done, total] }
   ["Sub-agents: 2/5 on one desk", ["working", "idle", "idle", "done", "idle", "idle"], false, false, null, [0, 0, 0, 4 * MIN, 0, 0], { 0: [2, 5] }],
 ];
+// What clicking DEMO plays: a day at the desks, on a loop. Each scene is a DEMO_STATES row plus how
+// long it lasts (ms). The labelled tour above is still there: `demo-<n>` opens it at state n.
+const IDLE6 = ["idle", "idle", "idle", "idle", "idle", "idle"];
+const STORY = [
+  ["Quiet: nobody's at it", IDLE6, false, false, null, null, null, 5000],
+  ["Work starts: one agent", W1, false, false, null, null, null, 4000],
+  ["Another joins: welcome", ["working", "working", "idle", "idle", "idle", "idle"], false, false, (t) => ({ fx: { newAgentWelcome: left(3, t) }, welcomeAddr: "demo-1" }), null, null, 4000],
+  ["Sub-agents spawn: 0/2", ["working", "working", "working", "idle", "idle", "idle"], false, false, null, null, { 0: [0, 2] }, 4000],
+  ["Ramping up: 0/5", ["working", "working", "working", "working", "idle", "idle"], false, false, null, null, { 0: [0, 5] }, 5000],
+  ["Sub-agents finish: 2/5", ["working", "working", "working", "working", "idle", "idle"], true, false, (t) => ({ fx: { finishPump: left(3, t) } }), null, { 0: [2, 5] }, 4000],
+  ["All done: 5/5, they're flying", ["working", "working", "done", "done", "idle", "idle"], true, false, (t) => ({ fx: { burstDance: left(5, t) } }), null, { 0: [5, 5] }, 5000],
+  ["Shipped: PR merged", ["working", "done", "done", "idle", "idle", "idle"], false, true, null, null, null, 5000],
+  ["Winding down", W1, false, false, null, null, null, 4000],
+  ["Quiet 10+ min: dozing", IDLE6, false, false, () => ({ idleMs: 11 * MIN, idleTalk: true }), null, null, 6000],
+  ["Asleep: the pets have the chair", IDLE6, false, false, null, null, null, 6000],
+];
+// The scene at t ms into a list of scenes: { i, into (ms into it), loop (how many times round) }.
+function sceneAt(list, t) {
+  const total = list.reduce((n, sc) => n + (sc[7] ?? DEMO_MS), 0), loop = Math.floor(t / total);
+  let rest = t - loop * total, i = 0;
+  while (rest >= (list[i][7] ?? DEMO_MS)) { rest -= list[i][7] ?? DEMO_MS; i++; }
+  return { i, into: rest, loop };
+}
 const OWNER = "commands-owner"; // localStorage key: which panel build takes commands
 const BANNERS = { merged: "PR MERGED", deployed: "DEPLOYED", pushed: "IT'S LIVE" };
 const POKES = 8;
@@ -187,6 +210,9 @@ export default class Office extends View {
         this.minBusy = false;
         if (this.minCheck()) changed = true;
         if (this.knockTick(cx)) changed = true;
+        // a desk's turn to speak starts or ends: draw it (only while someone's working)
+        const sayKey = this.list?.some((a) => a.status === "working") ? Math.floor(Date.now() / SAY_SHOW_MS) : null;
+        if (sayKey !== this.sayKey) { this.sayKey = sayKey; changed = true; }
         const kept = pruneSubs(this.subs, Date.now());       // finished sub-agents leave, forgotten ones too
         if (Object.keys(kept).length !== Object.keys(this.subs).length) { this.subs = kept; this.saveSubs(); changed = true; }
         if (this.demoAt != null || partyOver || changed || ++ticks % 15 === 0) cx.notify();
@@ -224,7 +250,7 @@ export default class Office extends View {
           if (c === "demo") { this.toggleDemo(); cx.notify(); }
           // demo-<n>: the demo at state n (1-based), e.g. for recording one state
           const dn = /^demo-(\d+)$/.exec(c);
-          if (dn && +dn[1] >= 1 && +dn[1] <= DEMO_STATES.length) { this.demoAt = Date.now() - (+dn[1] - 1) * DEMO_MS; cx.notify(); }
+          if (dn && +dn[1] >= 1 && +dn[1] <= DEMO_STATES.length) { this.demoMode = "tour"; this.demoAt = Date.now() - (+dn[1] - 1) * DEMO_MS; cx.notify(); }
           if (c === "dev") { this.dev = { mood: null, level: null }; setOption({ dev: !options().dev }); cx.notify(); }
           // `herdr-app do sitandwatch.chaos` turns chaos mode on for good (or off again)
           if (c === "chaos") { setOption({ chaos: !options().chaos }); cx.notify(); }
@@ -534,7 +560,8 @@ export default class Office extends View {
     };
   }
 
-  toggleDemo() { this.demoAt = this.demoAt == null ? Date.now() : null; }
+  // DEMO (the header, or `herdr-app do sitandwatch.demo`) plays the story; again stops it.
+  toggleDemo() { this.demoMode = "story"; this.demoAt = this.demoAt == null ? Date.now() : null; }
 
   roomProps() {
     const { width: w, height: h } = this.size;
@@ -793,10 +820,17 @@ export default class Office extends View {
         cx.notify();
       };
       if (this.demoAt != null) {
-        const t = now - this.demoAt, i = Math.floor(t / DEMO_MS) % DEMO_STATES.length, [label, sts, party, ship, mAt, ages, subs] = DEMO_STATES[i];
+        // the story (from DEMO) or the labelled tour (from demo-<n>, or anything that set demoAt directly)
+        const scenes = this.demoMode === "story" ? STORY : DEMO_STATES;
+        const t = now - this.demoAt, { i, into, loop } = sceneAt(scenes, t), [label, sts, party, ship, mAt, ages, subs] = scenes[i];
         // The 1s timer re-renders the demo: squashed for the first second, blown out until 3s, then gone.
-        const into = t % DEMO_MS, stage = !ship || into >= 3000 ? null : into < 1000 ? 0 : 1;
-        const fake = sts.map((status, j) => ({ address: `demo-${j}`, status, tab_name: `bot ${j + 1}`, program: null, focused: false,
+        const stage = !ship || into >= 3000 ? null : into < 1000 ? 0 : 1;
+        // Each desk is named after the real agent at that place, where there is one (same naming and
+        // screenshot-mode renames as the live panel), else "bot N".
+        const real = list;
+        const fake = sts.map((status, j) => ({ tab_name: `bot ${j + 1}`, program: null,
+          ...(real[j] ? { tab: real[j].tab, tab_name: real[j].tab_name, space: real[j].space, space_name: real[j].space_name, program: real[j].program, title: real[j].title } : {}),
+          address: `demo-${j}`, status, focused: false,
           ...(subs?.[j] ? { subs: { done: subs[j][0], total: subs[j][1], running: subs[j][1] - subs[j][0] } } : {}) }));
         const count = (st) => sts.filter((x) => x === st).length;
         const m = { working: count("working"), blocked: count("blocked"), longestWorkingMs: 0, longestBlockedMs: 0, longestBlockedAddr: null,
@@ -806,7 +840,9 @@ export default class Office extends View {
         m.pokeLine = this.m.pokeLine;
         const idle = Object.fromEntries(fake.map((a, j) => [a.address, ages?.[j] ?? 0]));
         const power = [0, 0.2, 0.5, 0.9][devLevel(fake)] * POWER_FULL;   // the demo's bar follows its level
-        return panel(fake, party, { label: `DEMO ${i + 1}/${DEMO_STATES.length}  ${label}`, toggle, ship: stage, shipKey: Math.floor(t / DEMO_MS), m, banner: BANNERS.merged, onDev: poke, idle, power });
+        const sayAt = talker(fake, now), sayDesk = fake.find((a) => a.address === sayAt);
+        const say = sayDesk ? { address: sayAt, text: sayText(tabLabel(sayDesk, sayDesk.title ?? "", ""), Math.floor(now / SAY_TURN_MS)) } : null;
+        return panel(fake, party, { say, label: `DEMO ${i + 1}/${scenes.length}  ${label}`, toggle, ship: stage, shipKey: loop * scenes.length + i, m, banner: BANNERS.merged, onDev: poke, idle, power });
       }
       // An agent going working -> done sets off the party popper for 3s; the 1s timer clears it.
       const prev = this.prevStatus ?? {};
@@ -844,7 +880,10 @@ export default class Office extends View {
         min: this.min ? `${this.min.axis} seen ${this.min.seen ?? "-"}` : "off",
       } : null;
       const walk = Object.fromEntries(Object.entries(this.walk ?? {}).filter(([, w]) => w.phase !== "home").map(([k, w]) => [k, w.phase]));
-      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk, idle, power: this.m.power,
+      // a working desk's turn to say what it's doing (its terminal title, through screenshot mode's renames)
+      const sayAt = talker(list, now), sayDesk = list.find((a) => a.address === sayAt);
+      const say = sayDesk ? { address: sayAt, text: sayText(tabLabel(sayDesk, sayDesk.title ?? "", ""), Math.floor(now / SAY_TURN_MS)) } : null;
+      try { return panel(list, (this.partyUntil ?? 0) > now, { say, toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk, idle, power: this.m.power,
         min: this.min?.axis ?? null, onMin: (cx) => this.minimise(cx),
         knock: canKnock(m.longestWorkingMs, devLevel(list)) || (this.m.knockUntil ?? 0) > now, canStage: this.m.canStage,
         pile: pileSize(this.m.spillTicks ?? 0), petPoke: this.m.petSay, onPet: (name, cx) => this.pokePet(name, cx),
