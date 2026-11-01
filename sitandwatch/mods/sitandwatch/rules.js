@@ -22,6 +22,7 @@ export const ONE_SHOT = {
   levelUp: { chip: "levelUp", ticks: 2, takesOver: false },
   linger: { chip: "linger", ticks: 2, takesOver: false },
   poke: { chip: "poke", ticks: 2, takesOver: false },
+  powerUp: { chip: "power", ticks: 4, takesOver: true },
 };
 export const ONE_SHOTS = Object.keys(ONE_SHOT);
 export const TAKES_OVER = ONE_SHOTS.filter((k) => ONE_SHOT[k].takesOver);
@@ -46,6 +47,7 @@ export const isNight = (h) => h >= 22 || h < 6;
 // (trackMetrics) or a demo state: counts, durations in ms, ticks left of each one-shot in m.fx.
 export function resolveMood(m, level) {
   const fx = m.fx ?? {};
+  if (fx.powerUp > 0) return "power";                    // the power bar filled: POWER!
   if (fx.burstDance > 0) return "burst";
   if (fx.streak > 0) return "streak";
   if (fx.errorWince > 0) return "error";
@@ -71,7 +73,7 @@ export function resolveMood(m, level) {
 // developer mode a pinned level wins, and a pinned mood wins unless a one-shot that takes over
 // is running (fired or real).
 export function effectiveMood(list, m, dev, ship) {
-  const level = ship != null ? 3 : dev?.level ?? devLevel(list);
+  const level = ship != null || (m?.fx?.powerUp ?? 0) > 0 ? 3 : dev?.level ?? devLevel(list);
   const busyOneShot = TAKES_OVER.some((k) => (m?.fx?.[k] ?? 0) > 0);
   const mood = ship != null || !m ? "normal" : dev?.mood && !busyOneShot ? dev.mood : resolveMood(m, level);
   return { level, mood };
@@ -89,6 +91,7 @@ export function petPoses(st) {
   // Simba out (night) or switched off in Options: Snowy knocks instead.
   const knocker = st.night || st.hide?.Simba ? "snowy" : "simba";
   if (st.ship) out.buddy = "howl";
+  else if (st.mood === "power") { /* POWER!: all awake and staring at him */ }
   else if (st.mood === "allBlocked") out.buddy = "paw";
   else if (st.spilled) out.buddy = "eat";
   else if (st.knock) out[knocker] = "knock";
@@ -146,3 +149,21 @@ export const COBWEB_MS = [60 * MIN, 8 * 60 * MIN];
 export const cobwebLevel = (idleMs) => (idleMs >= COBWEB_MS[1] ? 2 : idleMs >= COBWEB_MS[0] ? 1 : 0);
 // Developer mode's desk ages: pretend every desk not working or blocked has been idle this long.
 export const DESK_AGES = { "1h": COBWEB_MS[0], "8h": COBWEB_MS[1] };
+
+// ---- the power bar: a session meter ---------------------------------------------
+// Agent-seconds: each working agent adds one a second; with nothing working it drains a quarter a
+// second. Full (20 agent-minutes) fires the powerUp one-shot and empties, unless something must
+// play first (a ship explosion): then it waits, full. Shown in 20 steps; kept an hour across reloads.
+export const POWER_FULL = 1200, POWER_STEPS = 20, POWER_DRAIN = 0.25, POWER_KEEP_MS = 60 * MIN;
+export function powerStep(power, working, hold = false) {
+  let p = Number.isFinite(power) ? power : 0;
+  p = working > 0 ? p + working : Math.max(0, p - POWER_DRAIN);
+  if (p < POWER_FULL) return { power: p, fire: false };
+  return hold ? { power: POWER_FULL, fire: false } : { power: 0, fire: true };
+}
+export const powerShown = (power) => Math.floor((Math.min(Math.max(power, 0), POWER_FULL) / POWER_FULL) * POWER_STEPS);
+// A saved meter, if it's a number and not stale.
+export function loadPower(saved, savedAt, now) {
+  const p = Number(saved), at = Number(savedAt);
+  return Number.isFinite(p) && Number.isFinite(at) && now - at <= POWER_KEEP_MS ? Math.min(Math.max(p, 0), POWER_FULL) : 0;
+}

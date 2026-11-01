@@ -722,11 +722,68 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   // The demo's "Old agents" state shows both levels.
   const { o: d } = mount();
   d.demoAt = clock.now;
-  clock.now = d.demoAt + 24 * 5000;
-  const td = render(d, []);
+  let td = null;                                         // find the state by its label, not its position
+  for (let i = 0; i < 40 && !td; i++) { clock.now = d.demoAt + i * 5000; const t = render(d, []); if (texts(t).some((x) => x.includes("Old agents"))) td = t; }
+  if (!td) { fails.push("desks: no \"Old agents\" demo state"); td = render(d, []); }
   const demoWebs = ids(td).filter((x) => x.startsWith("pw-"));
   if (!demoWebs.some((x) => x.endsWith("-dust")) || !demoWebs.some((x) => /^pw-demo-[23]-1$/.test(x))) fails.push(`desks: the "Old agents" demo state should show a web and a covered desk, got ${demoWebs}`);
   noErr(td, "desks demo");
+}
+
+// ---- the power bar ---------------------------------------------------------------
+{
+  // Value: protects=the session meter: +1 a second per working agent, -0.25 idle down to 0, POWER! once at 1200 then empty,
+  // waiting while a ship plays, counted only by the owning copy from the live agents (not the demo's), kept an hour;
+  // fails_when=the maths, the reset, the owner gate, the live list, the ship hold or the reload store breaks;
+  // why_new=nothing else reads the meter; seam=none; no_claim=Herdr's real localStorage and timers (stubbed, fake clock)
+  const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
+  const st = (p, w, h) => JSON.stringify(R.powerStep(p, w, h));
+  if (st(10, 3) !== '{"power":13,"fire":false}') fails.push(`power: 3 working should add 3, got ${st(10, 3)}`);
+  if (st(10, 0) !== '{"power":9.75,"fire":false}' || st(0.1, 0) !== '{"power":0,"fire":false}') fails.push("power: idle should drain 0.25 a second, never below 0");
+  if (st(1199, 1) !== '{"power":0,"fire":true}') fails.push(`power: reaching 1200 should fire once and empty, got ${st(1199, 1)}`);
+  if (st(1199, 1, true) !== '{"power":1200,"fire":false}') fails.push(`power: a ship playing should hold it full, got ${st(1199, 1, true)}`);
+  if (st(NaN, 1) !== '{"power":1,"fire":false}') fails.push("power: a broken meter should restart from 0");
+  const now = clock.now;
+  if (R.loadPower("600", String(now - 59 * MIN), now) !== 600 || R.loadPower("600", String(now - 61 * MIN), now) !== 0 || R.loadPower("x", String(now), now) !== 0 || R.loadPower("9999", String(now), now) !== 1200)
+    fails.push("power: a saved meter is kept an hour, clamped, and a broken one is 0");
+
+  // Live: two working agents charge 2 a second, from agents() even while the demo is showing.
+  const { o } = mount();
+  render(o, ["idle", "idle", "idle"]);                   // what's on screen: nobody working
+  world.agents = agentsOf(["working", "working", "idle"]);   // the live agents, unseen while the demo shows
+  o.demoAt = clock.now;
+  S.advance(10000);
+  if (o.m.power !== 20) fails.push(`power: 10s of 2 working (demo showing) should be 20, got ${o.m.power}`);
+  o.demoAt = null;
+  // A copy that isn't the owner doesn't count.
+  localStorage.setItem("commands-owner", "someone-else");
+  S.advance(5000);
+  if (o.m.power !== 20) fails.push(`power: a copy that doesn't own the commands shouldn't count, got ${o.m.power}`);
+  const { o: f, cx: fcx } = mount();
+  render(f, ["working"]);
+  // Saved on a step change, loaded by the next copy.
+  f.m.power = 59; S.advance(1000);
+  if (localStorage.getItem("power") !== "60") fails.push(`power: a new step should be saved, saved ${localStorage.getItem("power")}`);
+  // Full: POWER! for 4 ticks, level 3 even with an agent blocked, pets awake; the bar empties.
+  f.m.power = 1199; S.advance(1000);
+  const tp = render(f, ["working", "blocked"]);
+  const head = ids(tp).find((x) => x.startsWith("pdev-head-")) ?? "";
+  if (f.m.powerUp !== 4 || f.m.power !== 0 || !head.startsWith("pdev-head-3-power")) fails.push(`power: full should fire POWER! at level 3 and empty, got powerUp=${f.m.powerUp} power=${f.m.power} ${head}`);
+  if (!texts(tp).includes("POWER!")) fails.push("power: he should say POWER!");
+  if (!ids(tp).includes("pdev-body-3-false")) fails.push(`power: POWER! should stand him up, not sad, with an agent blocked; got ${ids(tp).find((x) => x.startsWith("pdev-body-"))}`);
+  let glow = false; walk(tp, (e) => { if (e.calls.some(([k, a]) => k === "bg" && a[0] === "#ff5a5a44")) glow = true; });
+  if (!glow) fails.push("power: the corner should glow at level 3 during POWER!");
+  if (!ids(tp).some((x) => /^pet-(Buddy|Snowy|Simba)-sit$/.test(x)) || ids(tp).some((x) => /-(curl|paw|eat|back)$/.test(x))) fails.push("power: the pets should be awake and staring");
+  noErr(tp, "power");
+  // Waits for a ship explosion.
+  f.m.powerUp = 0; f.m.power = 1199; f.boom("merged", fcx); S.advance(1000);
+  if (f.m.power !== 1200 || f.m.powerUp) fails.push(`power: during a ship it should wait full, got power=${f.m.power} powerUp=${f.m.powerUp}`);
+  S.advance(3000);
+  if (!(f.m.powerUp > 0) || f.m.power > 1) fails.push(`power: after the ship it should fire (then charge on), got powerUp=${f.m.powerUp} power=${f.m.power}`);
+  // The bar: 20 steps across 40px.
+  f.m.power = 600;
+  const fill = (t) => { let w = null; walk(t, (e) => { if (e.idv === "saw-power-fill") w = e.calls.find(([k]) => k === "w")?.[1][0]; }); return w; };
+  if (fill(render(f, ["working"])) !== 20) fails.push(`power: half full should draw 20px of 40, got ${fill(render(f, ["working"]))}`);
 }
 
 const budget = g.budget.max + BUDGET_HEADROOM, over = snap.demo.counts.map((n, i) => [i + 1, n]).filter(([, n]) => n > budget);

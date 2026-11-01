@@ -4,7 +4,7 @@ import { agents, hc, nextCommand, spaces, panes, props, run, setAgentOrder, know
 import { options, setOption, optionsDialog, openOptions } from "./options.js";
 import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H, PETS, WALK_MS } from "./art.js";
 import { panel } from "./panel.js";
-import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES } from "./rules.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -52,6 +52,7 @@ const DEMO_STATES = [
   ["Quiet 10+ min: dozing", ["idle", "idle", "idle", "idle", "idle", "idle"], false, false, () => ({ idleMs: 11 * MIN, idleTalk: true })],
   ["Nothing running: empty chair", ["idle", "idle", "idle", "idle", "idle", "idle"], false],
   // desks idle 2h (a cobweb) and 10h (covered); the 7th element is the ms each desk has been idle
+  ["Power full: POWER!", ["working", "working", "working", "working", "idle", "idle"], false, false, (t) => ({ fx: { powerUp: left(4, t) } })],
   ["Old agents: cobwebs", ["working", "done", "idle", "idle", "idle", "idle"], false, false, null, [0, 30 * MIN, 2 * 60 * MIN, 2 * 60 * MIN, 10 * 60 * MIN, 10 * 60 * MIN]],
 ];
 const OWNER = "commands-owner"; // localStorage key: which panel build takes commands
@@ -153,6 +154,8 @@ export default class Office extends View {
         prevWorking: 0, welcomeAddr: null, lastUser: Date.now(), lastFocus: undefined, bornAt: Date.now(), ships: 0,
         seed: this.seed, lastBusy: Date.now(), byAddr: {}, streakAddr: null, blocks: 0, aysAddr: null,
         prevLevel: 0, pokeLine: "",
+        // the power bar: kept across reloads (a mod reload is any file save), forgotten after an hour
+        power: (() => { try { return loadPower(localStorage.getItem("power"), localStorage.getItem("powerAt"), Date.now()); } catch { return 0; } })(),
         ...Object.fromEntries(ONE_SHOTS.map((k) => [k, 0])),
       };
       poll(cx);
@@ -169,6 +172,7 @@ export default class Office extends View {
         for (const k of ONE_SHOTS) if (this.m[k] > 0) { this.m[k]--; changed = true; }
         if (partyOver) startOneShot(this.m, "linger", 1);   // a second of confetti still drifting down
         this.wanderTick(cx);
+        if (this.powerTick(token)) changed = true;
         if (this.demoAt != null || partyOver || changed || ++ticks % 15 === 0) cx.notify();
       });
       // `herdr-app do sitandwatch.ship` (sent by the Claude Code hook after a push) sets off the explosion:
@@ -211,6 +215,22 @@ export default class Office extends View {
     if (roleOf(props()) !== "office") return;
     this.roomView = cx.new(Room, this.roomProps());
     cx.timer.every(250, (cx) => { this.syncRoom(); if (this.tick()) cx.notify(); });
+  }
+
+  // The power bar, once a second. Only the copy that owns the commands counts (a stale copy left by a
+  // reload would count twice); from the live agents, not the list on screen (the demo shows fakes).
+  // Returns whether the drawn bar changed.
+  powerTick(token) {
+    try { if (localStorage.getItem(OWNER) !== token) return false; } catch { return false; }
+    const seen = new Set(), live = [...agents(), ...(this.helpers ?? [])].filter((a) => !seen.has(a.address) && seen.add(a.address));
+    const working = live.filter((a) => a.status === "working").length;
+    const before = powerShown(this.m.power);
+    const { power, fire } = powerStep(this.m.power, working, this.ship != null);
+    this.m.power = power;
+    if (fire) startOneShot(this.m, "powerUp");
+    if (powerShown(power) === before && !fire) return false;
+    try { localStorage.setItem("power", String(power)); localStorage.setItem("powerAt", String(Date.now())); } catch {}
+    return true;
   }
 
   // Now and then a pet gets up, walks off the edge, and comes back a while later: each on its own
@@ -592,7 +612,8 @@ export default class Office extends View {
         m.fx = { ...m.fx, poke: this.m.poke };
         m.pokeLine = this.m.pokeLine;
         const idle = Object.fromEntries(fake.map((a, j) => [a.address, ages?.[j] ?? 0]));
-        return panel(fake, party, { label: `DEMO ${i + 1}/${DEMO_STATES.length}  ${label}`, toggle, ship: stage, shipKey: Math.floor(t / DEMO_MS), m, banner: BANNERS.merged, onDev: poke, idle });
+        const power = [0, 0.2, 0.5, 0.9][devLevel(fake)] * POWER_FULL;   // the demo's bar follows its level
+        return panel(fake, party, { label: `DEMO ${i + 1}/${DEMO_STATES.length}  ${label}`, toggle, ship: stage, shipKey: Math.floor(t / DEMO_MS), m, banner: BANNERS.merged, onDev: poke, idle, power });
       }
       // An agent going working -> done sets off the party popper for 3s; the 1s timer clears it.
       const prev = this.prevStatus ?? {};
@@ -622,7 +643,7 @@ export default class Office extends View {
         desks: d.desks, onDesks: (v, cx) => { d.desks = v; cx.notify(); },
       } : null;
       const walk = Object.fromEntries(Object.entries(this.walk ?? {}).filter(([, w]) => w.phase !== "home").map(([k, w]) => [k, w.phase]));
-      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk, idle }); }
+      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk, idle, power: this.m.power }); }
       catch (e) { return div().p(8).bg("#fff").child(txt(`ERR ${e?.message ?? e}`, 12, "#a8322a")); }
     }
     if (role === "rail") {
