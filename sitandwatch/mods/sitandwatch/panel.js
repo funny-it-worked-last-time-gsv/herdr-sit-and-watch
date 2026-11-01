@@ -2,7 +2,8 @@ import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run } from "herdr";
 import { ink, SCREEN, r, txt, look, bot, spectator, stance, pets, explosion, DEV_W, DEV_H } from "./art.js";
-import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES } from "./rules.js";
+import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES, FLOORS } from "./rules.js";
+import { options, openOptions } from "./options.js";
 
 // ---- developer mode -------------------------------------------------------
 // `herdr-app do sitandwatch.dev` shows a strip under the header: the numbers the mood is picked
@@ -99,27 +100,36 @@ export function panel(list, party = false, opts = {}) {
   const name = list.find((a) => a.address === markAddr)?.tab_name ?? "";
   const levelUp = (m?.fx?.levelUp ?? 0) > 0;          // a warm flash on reaching level 3
   const glow = levelUp ? "#ffd27a77" : ["#ffb06a10", "#ffb06a22", "#ff8a6a30", "#ff5a5a44"][level];
+  const o = options();
   // Everything spectator() draws him from; pets() reads whether he's in the chair from the same.
   const him = {
+    speech: o.speech,
     panic, party, ship: ship != null, firstShip: !!opts.firstShip, mood, fx: m?.fx, name,
     provider: provider(list), night: isNight(m?.hour ?? new Date().getHours()) || mood === "lateNight",
     seed: m?.seed ?? 0, chaos: !!m?.chaos || (m?.working ?? 0) >= 6, tint: dominantTint(list),
     linger: (m?.fx?.linger ?? 0) > 0, poke: m?.fx?.poke ?? 0, pokeLine: m?.pokeLine ?? "",
     idleTalk: m?.idleTalk ?? Math.floor(Date.now() / 30000) % 6 === 0, idleN: Math.floor(Date.now() / 180000),
   };
-  // The pets react to what he's doing; developer mode can force a scene.
+  // The pets react to what he's doing; developer mode can force a scene; Options can send one away.
   const st = stance(level, him);
+  const hide = Object.fromEntries(Object.entries(o.pets).map(([k, on]) => [k, !on]));
   const real = { present: st.present, ship: ship != null, mood, spilled: st.spilled, knock: false, ovation: st.L === 3, night: him.night };
-  const poses = petPoses(dev?.pets ? PET_SCENES[dev.pets] : real);
+  const poses = petPoses({ ...(dev?.pets ? PET_SCENES[dev.pets] : real), hide });
+  for (const [k, name] of [["buddy", "Buddy"], ["snowy", "Snowy"], ["simba", "Simba"]]) if (hide[name]) poses[k] = "gone";
   // Nothing here depends on the panel's measured size: flex does all the fitting,
   // so resizing the column never needs a re-render.
-  return v_flex().id("saw-panel").size_full().overflow_hidden().bg("#e2a465")
+  return v_flex().id("saw-panel").size_full().overflow_hidden().bg(FLOORS[o.floor].color)
     // header: click toggles the demo; in the demo it says which state you're looking at
     .child(h_flex().id("saw-head").h(opts.label ? 30 : 23).w_full().flex_none().px(8).gap(6).items_center().cursor_pointer()
       .bg(opts.label ? "#6b3f1f" : "#8796b0").border_b(3).border_color("#7a4a28")
       .when(!!opts.toggle, (e) => e.on_click((_e, cx) => opts.toggle(cx)))
       .child(txt(opts.label ?? `${working}/${list.length} AT IT`, opts.label ? 10 : 12, "#fff8e1"))
       .child(div().flex_1())
+      // the Options dialog; its own click, so it doesn't start the demo
+      .child(div().id("saw-opts").px(3).cursor_pointer()
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .on_click((_e, cx) => { cx.stop_propagation(); openOptions(); })
+        .child(txt("OPTS", 10, "#dfe6f0")))
       .child(txt(opts.label ? "STOP" : "DEMO", 10, opts.label ? "#ffd86a" : "#dfe6f0")))
     .when(!!dev, (e) => e.child(devStrip(dev, mood, level, m)))
     .child(div().id("saw-desks").flex().flex_wrap().justify_center().content_start().flex_1().w_full().overflow_hidden().pt(6)

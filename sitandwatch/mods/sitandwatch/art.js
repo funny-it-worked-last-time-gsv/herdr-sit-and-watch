@@ -280,10 +280,11 @@ export function pets(poses, cornerH, s, id) {
   const out = [];
   // Buddy: by the chair; at the popcorn when it's spilled (under the right of the chair)
   const b = poses.buddy;
-  if (b === "curl") out.push(at(12, seat + 5, buddy, "curl"));
+  if (b === "gone") { /* switched off in Options */ }
+  else if (b === "curl") out.push(at(12, seat + 5, buddy, "curl"));
   else if (b === "eat") out.push(at(22, floor, buddy, "eat", true));   // nose to the popcorn
   else out.push(at(-44, floor, buddy, b));
-  if (b === "howl") out.push(div().absolute().left(-48).top(floor - 13 * s - 16).id(`${id}-awoo`)
+  if (b === "howl" && b !== "gone") out.push(div().absolute().left(-48).top(floor - 13 * s - 16).id(`${id}-awoo`)
     .child(txt("AWOO", 10, "#3b2a1c").frames(["AWOO", "awoo", "AWOOO"], 400)));
   // The cats: past the lamp, or curled on the chair, or the knocker up on the right armrest
   const cat = (p, pose, spot) => {
@@ -662,7 +663,7 @@ export function spectator(level, s, id, opts) {
     .when(party && !sad, (e) => e.child(R(22, 12, 3, 4, "#e0b040").child(R(0, 0, 3, 1, "#c9302c")))
       .child(txt("*", 12, "#c9302c").absolute().left(24 * s).top(6 * s).id(`${id}-popper`).frames(["*", "\\*/", "*"], 200))
       .children(confetti(12, "party")))
-    .when(!dozing || idleTalk, (e) => e.child(say));
+    .when((!dozing || idleTalk) && o.speech !== false, (e) => e.child(say));
 }
 
 // ---- bots: the panel's workers, seen from behind like seated() ------------

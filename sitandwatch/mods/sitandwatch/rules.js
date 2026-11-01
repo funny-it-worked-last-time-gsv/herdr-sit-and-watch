@@ -86,7 +86,8 @@ export function effectiveMood(list, m, dev, ship) {
 export function petPoses(st) {
   if (!st.present) return { buddy: "curl", snowy: "curl", simba: "curl" };
   const out = { buddy: "sit", snowy: "sit", simba: st.night ? "gone" : "sit" };
-  const knocker = st.night ? "snowy" : "simba";
+  // Simba out (night) or switched off in Options: Snowy knocks instead.
+  const knocker = st.night || st.hide?.Simba ? "snowy" : "simba";
   if (st.ship) out.buddy = "howl";
   else if (st.mood === "allBlocked") out.buddy = "paw";
   else if (st.spilled) out.buddy = "eat";
@@ -106,3 +107,28 @@ export const PET_SCENES = {
   knock: { present: true, knock: true },
   night: { present: true, night: true },
 };
+
+// ---- options (the Options dialog; shared state "sitandwatch.options") ------------
+// Floors: colours behind the desks and the corner. Slate is cool against his warm armchair and
+// the orange and tan pets, so they stand out.
+export const FLOORS = {
+  slate: { name: "Slate", color: "#6b7a8f" },
+  tan: { name: "Tan (classic)", color: "#e2a465" },
+  teal: { name: "Deep teal", color: "#3e6668" },
+  sage: { name: "Sage", color: "#95a88a" },
+  navy: { name: "Night navy", color: "#2e3a55" },
+};
+export const DEFAULT_OPTIONS = { floor: "slate", pets: { Buddy: true, Snowy: true, Simba: true }, speech: true, chaos: false, dev: false };
+
+// Whatever is stored, as a complete, valid options object (unknown or broken values fall back).
+export function readOptions(raw) {
+  const o = raw && typeof raw === "object" ? raw : {};
+  const pets = o.pets && typeof o.pets === "object" ? o.pets : {};
+  return {
+    floor: FLOORS[o.floor] ? o.floor : DEFAULT_OPTIONS.floor,
+    pets: Object.fromEntries(Object.keys(DEFAULT_OPTIONS.pets).map((k) => [k, pets[k] !== false])),
+    speech: o.speech !== false,
+    chaos: o.chaos === true,
+    dev: o.dev === true,
+  };
+}

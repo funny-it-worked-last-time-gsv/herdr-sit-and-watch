@@ -44,6 +44,19 @@ Click the header, or run `herdr-app do sitandwatch.demo`, to cycle through all 2
 (the animation above is one cycle).
 Click a desk to jump to that agent.
 
+### Options
+
+Click **OPTS** in the panel's header, or run `herdr-app do sitandwatch.options`, for:
+
+- **Floor:** slate (the default; the orange and tan pets stand out on it), tan (the original), deep
+  teal, sage or night navy.
+- **Pets:** switch Buddy, Snowy or Simba off. Their names and coats are the `PETS` table in
+  `art.js`.
+- **Speech bubbles:** off and he still reacts, silently.
+- **Chaos mode** and **developer mode**, the same as their commands below.
+
+Choices are kept in Herdr's shared state, so they survive restarts.
+
 ### Developer mode
 
 `herdr-app do sitandwatch.dev` adds a strip under the header with the numbers the mood is picked

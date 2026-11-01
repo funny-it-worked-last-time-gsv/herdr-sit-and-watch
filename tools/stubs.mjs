@@ -91,7 +91,7 @@ export const findId = (e, pred) => { let hit = null; walk(e, (x) => { if (!hit &
 // Tests set these between renders.
 export const world = {
   agents: [], props: { role: "panel" }, spaces: [], panes: [], hcLs: { terminals: [] }, hcGet: {},
-  runs: [], notes: [], layout: null,
+  runs: [], notes: [], layout: null, shared: {}, overlays: [],
 };
 export const agents = () => world.agents;
 export const props = () => world.props;
@@ -102,6 +102,10 @@ export const setAgentOrder = () => {};
 export const run = (name, args) => { world.runs.push([name, args]); };
 export const notify = (n) => { world.notes.push(n); };
 export const layout = () => world.layout;
+export const shared = (k) => world.shared[k];
+export const setShared = (k, v) => { world.shared[k] = v; };
+export const openOverlay = (spec) => { world.overlays.push(spec); return `ov${world.overlays.length}`; };
+export const closeOverlay = (id) => { world.overlays = world.overlays.filter((_, i) => `ov${i + 1}` !== id); return null; };
 export const nextCommand = () => new Promise(() => {});   // no commands offline
 export async function hc(argv) {
   if (argv[0] === "ls") return { stdout: JSON.stringify(world.hcLs) };
