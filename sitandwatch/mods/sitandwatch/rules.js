@@ -199,24 +199,46 @@ export function findBlock(tree) {
   if (!n.id) return { ok: false, reason: "noid" };
   const axis = parent?.type === "row" ? "row" : "column";
   const target = axis === "row" ? MIN_RAIL : MIN_STRIP;
-  if ((n.min ?? 0) > target) return { ok: false, reason: "min", id: n.id, min: n.min };
+  // too big a min stops minimising only; the height setting can still use the block (axis, size, min)
+  if ((n.min ?? 0) > target) return { ok: false, reason: "min", id: n.id, min: n.min, axis, size: n.size ?? null };
   return { ok: true, id: n.id, axis, target, size: n.size ?? null };
 }
 // Minimised, and the block now reads big again (dragged open, another layout): show the full panel.
 // Not in the first moments after shrinking, while Herdr catches up.
 export const shouldClearMin = (sizePx, minAt, now) => now - minAt > MIN_GUARD_MS && Number.isFinite(sizePx) && sizePx >= MIN_OPEN;
-// The height to set now, or null: a chosen height not yet applied, for a block in a column (in a
-// row, docked left or right, its size is a width), and never while it's minimised.
-export function heightToApply(height, applied, b, minimised) {
-  if (!height || height === applied || minimised || !b?.ok || b.axis !== "column") return null;
-  return b.size?.px === height ? null : height;
+// The height from Options, planned once a second. saved (localStorage "height"): { id, h, from } — the
+// height last set on block id, and the size the block had before (to hand back on "layout"). first: this
+// copy's first tick (a restart or a reload). Returns { resize: size | null, saved, warn: reason | null }.
+// - "layout" after a chosen height: the block goes back to its size from before.
+// - A new choice: set it (a layout min above the strip is fine, up to the height chosen).
+// - The same choice: nothing, so a drag of the sidebar line stands; except on a first tick with the block
+//   back at its size from before (Herdr restarted and the layout put it back): set it again.
+const sameSize = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+export function planHeight({ height, saved, b, minimised, first }) {
+  const keep = { resize: null, saved: saved ?? null, warn: null };
+  if (minimised) return keep;
+  const found = !!b && (b.ok || b.reason === "min");
+  if (!height) {
+    if (saved && found && b.id === saved.id && !sameSize(b.size, saved.from)) return { resize: saved.from ?? { weight: 1 }, saved: null, warn: null };
+    return { resize: null, saved: null, warn: null };
+  }
+  if (!found) return { ...keep, warn: b?.reason ?? "none" };
+  if (b.axis !== "column") return { ...keep, warn: "row" };
+  if ((b.min ?? 0) > height) return { ...keep, warn: "small" };
+  if (!saved || saved.id !== b.id || saved.h !== height) {
+    const from = saved?.id === b.id ? saved.from : b.size ?? null;
+    return { resize: b.size?.px === height ? null : { px: height }, saved: { id: b.id, h: height, from }, warn: null };
+  }
+  if (first && b.size?.px !== height && sameSize(b.size, saved.from)) return { ...keep, resize: { px: height } };
+  return keep;
 }
 // A saved strip only comes back where it belongs: the same block on the same axis, still strip-sized
 // (another layout reusing the id, or a Herdr restart that put the block back to full size, drop it).
 // Forgotten only on positive evidence: a different block or axis, or a px size that's open; with no
 // readable layout or no px size it's kept, and minCheck clears it later if the block reads open.
-export function keepMin(min, b) {
-  if (!min || !b?.ok) return min ?? null;
+// A strip saved under MIN_GUARD_MS ago is kept too: Herdr may not have shrunk the block yet.
+export function keepMin(min, b, now = Infinity) {
+  if (!min || !b?.ok || now - (min.at ?? 0) <= MIN_GUARD_MS) return min ?? null;
   if (b.id !== min.id || b.axis !== min.axis) return null;
   return Number.isFinite(b.size?.px) && b.size.px >= MIN_OPEN ? null : min;
 }
@@ -227,6 +249,13 @@ export const MIN_TROUBLE = {
   noid: "Give my block an id in your layout",
   min: "Herdr won't shrink me: lower my block's min to 30",
   failed: "Herdr refused to resize me",
+};
+// And for the height setting (none, ambiguous and noid as above).
+export const HEIGHT_TROUBLE = {
+  none: MIN_TROUBLE.none, ambiguous: MIN_TROUBLE.ambiguous, noid: MIN_TROUBLE.noid,
+  row: "Height only works in the sidebar: I'm docked in a row",
+  small: "My block's min is bigger than that height",
+  failed: "Herdr refused to set my height",
 };
 
 // ---- the can and the popcorn -----------------------------------------------------
@@ -246,7 +275,8 @@ export function trackWaiting(waiting, list, atOf, keepMissing = false) {
   const out = {};
   if (keepMissing) for (const [k, at] of Object.entries(waiting)) if (!list.some((a) => a.address === k)) out[k] = at;
   for (const a of list) {
-    if (a.status === "done") out[a.address] = waiting[a.address] ?? atOf(a);
+    // the earlier of what's stored and when it entered done: hc's real time can arrive after a provisional one
+    if (a.status === "done") out[a.address] = Math.min(waiting[a.address] ?? Infinity, atOf(a));
     else if (a.status === "idle" && waiting[a.address] != null) out[a.address] = waiting[a.address];
   }
   return out;
