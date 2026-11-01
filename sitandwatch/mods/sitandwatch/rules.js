@@ -297,7 +297,9 @@ export function sinceLabel(ms) {
 // (sitandwatch/hooks/sitandwatch-subagents.py): sub-start / sub-stop with the session's terminal and the
 // sub-agent's id. subs: { [id]: { parent, at, doneAt } }. Each gets a desk after its parent's, working
 // until it stops, done for a few seconds after (the finish), then gone; one never stopped goes after an hour.
-export const SUB_DONE_MS = 8000, SUB_TTL_MS = 60 * MIN;
+// SUB_TTL_MS: a sub-agent whose stop never comes (Esc, a killed session, a hook that timed out) is
+// forgotten after this, so it doesn't count as working for long.
+export const SUB_DONE_MS = 8000, SUB_TTL_MS = 15 * MIN;
 export function parseSubCommand(c) {
   const m = /^sub-(start|stop)-([A-Za-z0-9]+)-([A-Za-z0-9]+)$/.exec(c ?? "");
   return m ? { verb: m[1], parent: m[2], id: m[3] } : null;
@@ -319,7 +321,8 @@ export function pruneSubs(subs, now) {
 // Only those whose session has a desk: one whose parent isn't listed (closed, or a terminal id that
 // doesn't match) counts for nothing until it shows up or is dropped.
 export function subDesks(subs, list) {
-  return Object.entries(subs).filter(([, s]) => list.some((a) => a.address === s.parent)).map(([id, s]) => {
+  // a tombstone (a stop seen before its start) is no sub-agent at all
+  return Object.entries(subs).filter(([, s]) => !s.tomb && list.some((a) => a.address === s.parent)).map(([id, s]) => {
     const parent = list.find((a) => a.address === s.parent);
     return { address: `${s.parent}~${id.slice(0, 8)}`, status: s.doneAt ? "done" : "working", parent: s.parent, sub: true,
       tab_name: parent?.tab_name ?? "sub", app: parent?.app ?? null, program: parent?.program ?? null, focused: false };
