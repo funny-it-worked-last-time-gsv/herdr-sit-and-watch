@@ -56,7 +56,7 @@ more (or every agent, with at least two). The reactions stack:
 
 | Level | He does | He says |
 | --- | --- | --- |
-| 0 | Nothing: the chair is empty, a dent in the cushion, popcorn on the seat. | |
+| 0 | Nothing: the chair is empty and the pets have it (curled up), his popcorn on the floor. | |
 | 1 | Bobs slowly, feeds himself popcorn, waves a yellow foam finger, taps a foot, eyebrows creep up, scarf flaps. | `ooh`, `nice`, `go on` |
 | 2 | Leans in clapping, eyes wide, brows high, cheeks flushed, sweat drops, bounces. | `look at 'em go`, `go on son!`, `ooh yes` |
 | 3 | Standing ovation out of the chair: eyes bulging, jaw dropped, head thrown back, foam finger and fist pumping, popcorn flying, confetti, shaking. | `SHIP IT!`, `!!!`, `MORE AGENTS`, `YES LADS` |
