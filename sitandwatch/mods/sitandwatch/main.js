@@ -224,7 +224,10 @@ export default class Office extends View {
           if (c === "wander") this.wanderTick(cx, true);
           if (c === "min") this.minimise(cx);
           // height-<240|300|400|500|layout>: the panel's height, as the Options dialog sets it (remembered)
-          if (c.startsWith("height-")) { const v = c.slice(7); setOption({ height: v === "layout" ? null : Number(v) }); cx.notify(); }
+          if (c.startsWith("height-")) {                       // anything else (height-350, a typo) is ignored
+            const v = c.slice(7);
+            if (v === "layout" || HEIGHTS.includes(Number(v))) { setOption({ height: v === "layout" ? null : Number(v) }); cx.notify(); }
+          }
           // sub-start-<terminal>-<id> / sub-stop-...: a Claude Code sub-agent (the subagents hook)
           const sub = parseSubCommand(c);
           if (sub) this.subEvent(sub, cx);
@@ -322,7 +325,14 @@ export default class Office extends View {
     let b; try { b = findBlock(layout()); } catch { return; }
     const px = heightToApply(h, this.heightApplied, b, !!this.min);
     if (b?.ok && b.axis === "column" && !this.min) this.heightApplied = h;   // applied, or already that size
-    if (px) try { run("layout.resize", { id: b.id, px }); } catch {}
+    if (!px) return;
+    // Herdr can refuse (a column that can't give it the room): say so once, like minimise does.
+    const refused = (e) => { try { notify({ title: "Sit & Watch", body: `Herdr refused to set my height to ${px}px${e ? `: ${e}` : ""}`, level: "warning" }); } catch {} };
+    try {
+      const r = run("layout.resize", { id: b.id, px });
+      if (r?.error) refused(r.error);
+      else if (typeof r?.then === "function") r.then((v) => { if (v?.error) refused(v.error); }, (e) => refused(e?.message ?? String(e)));
+    } catch (e) { refused(e?.message ?? String(e)); }
   }
 
   // A sub-agent started or stopped. A stop for one never seen is ignored; a start for one already
