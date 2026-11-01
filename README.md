@@ -152,7 +152,7 @@ Three optional Claude Code hooks live in `sitandwatch/hooks/`:
   ```json
   "PreToolUse": [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/sitandwatch-activity.py", "async": true, "timeout": 10 }] }]
   ```
-  Before each tool call it sends a short phrase (`Edit main.js`, `Run npm test`, `Grep
+  Before each tool call it sends a short phrase (`Edit main.js`, `npm test`, `Grep
   useAuth`: a file's name, never its path or contents; a command's program and subcommand only, like `npm test`) as
   `herdr-app do sitandwatch.act-<terminal>-<base64url>`. One quick `herdr-app` run per tool call, in
   the background; it never blocks or fails Claude Code.
@@ -193,6 +193,8 @@ against screenshots of the live panel.
 - **Quieter, safer activity bubbles** ([#10](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/10)). Repeats are skipped in the hook and the panel,
   secret-shaped words show as `***`, phrases fit the 20 characters a bubble shows (`Edit main.js`,
   `Run git push`, `> Review the diff`), and Options can turn the bubbles off.
+- **Commands say what they do** ([#11](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/11)). A command shows just its program (`git diff`, not
+  `Run git diff`), and leading setup steps like `cd ~/proj &&` are skipped, so it names the real work.
 
 ## Credits
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """PreToolUse hook: tell the Sit & Watch panel in the Herdr app what this Claude Code session is doing
-right now ("Edit main.js", "Run npm test"), so its desk's speech bubble shows real activity.
+right now ("Edit main.js", "npm test"), so its desk's speech bubble shows real activity.
 Never blocks or fails anything.
 
 Sends `herdr-app do sitandwatch.act-<terminal>-<text>`, where <terminal> is the Herdr terminal this
@@ -40,15 +40,27 @@ def _base(path: str) -> str:
     return os.path.basename(str(path or "").rstrip("/")) or str(path or "")
 
 
-def program(cmd: str) -> str:
-    """A command's program and subcommand only ("npm test", "git push"): leading VAR=value assignments
-    are skipped and a path becomes its last part, and nothing else of the command is shown (arguments can
-    hold paths and secrets)."""
-    words = [w for w in cmd.split()]
-    while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+# Steps that only set the scene for the real command: `cd ~/project && git diff` is "git diff",
+# not "cd". Bare VAR=value steps count too.
+SETUP = {"cd", "pushd", "popd", "export", "set", "source", "."}
+STEPS = re.compile(r"&&|\|\||;|\n")
+
+
+def _words(step: str) -> list:
+    words = step.split()
+    while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):   # leading VAR=value assignments
         words.pop(0)
-    if not words:
+    return words
+
+
+def program(cmd: str) -> str:
+    """A command's program and subcommand only ("npm test", "git push"), from its first step that isn't
+    setup (`cd`, `export`, a bare assignment); a path becomes its last part, and nothing else of the
+    command is shown (arguments can hold paths and secrets). All setup: the first of it ("cd")."""
+    steps = [w for w in (_words(p) for p in STEPS.split(cmd)) if w]
+    if not steps:
         return "a command"
+    words = next((w for w in steps if _base(w[0]) not in SETUP), steps[0])
     name = _base(words[0])
     sub = words[1] if name in SUBCOMMANDS and len(words) > 1 and re.match(r"^[a-z][a-z-]{0,19}$", words[1]) else ""
     return f"{name} {sub}".strip()
@@ -73,7 +85,7 @@ def describe(tool: str, args: dict) -> str:
     if tool in ("Edit", "MultiEdit", "Write", "NotebookEdit"):
         return f"Edit {_base(a.get('file_path') or a.get('notebook_path'))}"
     if tool == "Bash":
-        return "Run " + program(str(a.get("command") or ""))
+        return program(str(a.get("command") or ""))   # just the program: "git push", "npm test"
     if tool == "Grep":
         return f"Grep {redact(a.get('pattern'))}"
     if tool == "Glob":
