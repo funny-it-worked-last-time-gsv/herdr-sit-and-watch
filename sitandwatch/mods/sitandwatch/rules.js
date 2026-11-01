@@ -132,3 +132,17 @@ export function readOptions(raw) {
     dev: o.dev === true,
   };
 }
+
+// ---- desks in last-active order, the old ones under cobwebs ------------------------
+// lastActive: { [address]: ms } from main.js (now for an agent that's working or blocked, else when it
+// entered its current status). Most recent first; ties keep their order, so busy desks stay put.
+export function byLastActive(list, lastActive) {
+  return list.map((a, i) => [a, i])
+    .sort(([a, i], [b, j]) => (lastActive[b.address] ?? 0) - (lastActive[a.address] ?? 0) || i - j)
+    .map(([a]) => a);
+}
+// How cobwebbed a desk is after this long without its agent working: 1 hour one web, 8 hours covered.
+export const COBWEB_MS = [60 * MIN, 8 * 60 * MIN];
+export const cobwebLevel = (idleMs) => (idleMs >= COBWEB_MS[1] ? 2 : idleMs >= COBWEB_MS[0] ? 1 : 0);
+// Developer mode's desk ages: pretend every desk not working or blocked has been idle this long.
+export const DESK_AGES = { "1h": COBWEB_MS[0], "8h": COBWEB_MS[1] };

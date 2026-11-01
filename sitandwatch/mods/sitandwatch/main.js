@@ -4,7 +4,7 @@ import { agents, hc, nextCommand, spaces, panes, props, run, setAgentOrder, know
 import { options, setOption, optionsDialog, openOptions } from "./options.js";
 import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H, PETS, WALK_MS } from "./art.js";
 import { panel } from "./panel.js";
-import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel } from "./rules.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -51,6 +51,8 @@ const DEMO_STATES = [
     (t) => ({ fx: { areYouSure: left(4, t) }, aysAddr: "demo-1" })],
   ["Quiet 10+ min: dozing", ["idle", "idle", "idle", "idle", "idle", "idle"], false, false, () => ({ idleMs: 11 * MIN, idleTalk: true })],
   ["Nothing running: empty chair", ["idle", "idle", "idle", "idle", "idle", "idle"], false],
+  // desks idle 2h (a cobweb) and 10h (covered); the 7th element is the ms each desk has been idle
+  ["Old agents: cobwebs", ["working", "done", "idle", "idle", "idle", "idle"], false, false, null, [0, 30 * MIN, 2 * 60 * MIN, 2 * 60 * MIN, 10 * 60 * MIN, 10 * 60 * MIN]],
 ];
 const OWNER = "commands-owner"; // localStorage key: which panel build takes commands
 const BANNERS = { merged: "PR MERGED", deployed: "DEPLOYED", pushed: "IT'S LIVE" };
@@ -131,7 +133,9 @@ export default class Office extends View {
           }
           m.finishedSeen = new Set(fin.map((t) => t.address));
           // When each busy agent entered its status, from hc: survives reloads, unlike our own stamps.
-          for (const t of ts.filter((t) => t.status === "working" || t.status === "blocked")) {
+          // Busy ones every poll (how long they've been at it); the rest once per status (when they
+          // stopped: the desks' last-active order and their cobwebs).
+          for (const t of ts.filter((t) => t.status && (t.status === "working" || t.status === "blocked" || m.hcSince[t.address]?.status !== t.status))) {
             try {
               const g = JSON.parse((await hc(["get", t.address, "--json"])).stdout);
               if (g.status_ms) m.hcSince[t.address] = { status: g.status?.state ?? t.status, at: g.status_ms };
@@ -191,6 +195,8 @@ export default class Office extends View {
           if (c === "chaos") { setOption({ chaos: !options().chaos }); cx.notify(); }
           if (c === "options") openOptions();
           if (c === "wander") this.wanderTick(cx, true);
+          // desks-<1h|8h|real>: pretend every desk not busy has been idle that long (cobwebs)
+          if (c.startsWith("desks-")) { const v = c.slice(6); this.dev.desks = DESK_AGES[v] ? v : null; cx.notify(); }
           // ship, ship-merged, ship-deployed: the hook says what shipped, for the banner
           if (c === "ship" || c.startsWith("ship-")) this.boom(c.slice(5), cx);
           // developer mode from the command line too: fire-<event>, mood-<name|auto>, level-<0..3|real>
@@ -575,7 +581,7 @@ export default class Office extends View {
         cx.notify();
       };
       if (this.demoAt != null) {
-        const t = now - this.demoAt, i = Math.floor(t / DEMO_MS) % DEMO_STATES.length, [label, sts, party, ship, mAt] = DEMO_STATES[i];
+        const t = now - this.demoAt, i = Math.floor(t / DEMO_MS) % DEMO_STATES.length, [label, sts, party, ship, mAt, ages] = DEMO_STATES[i];
         // The 1s timer re-renders the demo: squashed for the first second, blown out until 3s, then gone.
         const into = t % DEMO_MS, stage = !ship || into >= 3000 ? null : into < 1000 ? 0 : 1;
         const fake = sts.map((status, j) => ({ address: `demo-${j}`, status, tab_name: `bot ${j + 1}`, program: null, focused: false }));
@@ -585,13 +591,24 @@ export default class Office extends View {
           ...(mAt?.(Math.floor(into / 1000)) ?? {}) };
         m.fx = { ...m.fx, poke: this.m.poke };
         m.pokeLine = this.m.pokeLine;
-        return panel(fake, party, { label: `DEMO ${i + 1}/${DEMO_STATES.length}  ${label}`, toggle, ship: stage, shipKey: Math.floor(t / DEMO_MS), m, banner: BANNERS.merged, onDev: poke });
+        const idle = Object.fromEntries(fake.map((a, j) => [a.address, ages?.[j] ?? 0]));
+        return panel(fake, party, { label: `DEMO ${i + 1}/${DEMO_STATES.length}  ${label}`, toggle, ship: stage, shipKey: Math.floor(t / DEMO_MS), m, banner: BANNERS.merged, onDev: poke, idle });
       }
       // An agent going working -> done sets off the party popper for 3s; the 1s timer clears it.
       const prev = this.prevStatus ?? {};
       if (list.some((a) => prev[a.address] === "working" && a.status === "done")) this.partyUntil = now + 3000;
       const m = this.trackMetrics(list, prev, !this.prevStatus);
       this.prevStatus = Object.fromEntries(list.map((a) => [a.address, a.status]));
+      // Desks in last-active order: busy agents are active now; the rest since they entered their
+      // status (hc's status_ms when it agrees, else when this panel saw the change). idle: ms since.
+      const lastActive = {}, idle = {};
+      for (const a of list) {
+        const busy = a.status === "working" || a.status === "blocked";
+        const hcAt = this.m.hcSince[a.address]?.status === a.status ? this.m.hcSince[a.address].at : null;
+        lastActive[a.address] = busy ? now : hcAt ?? this.m.local[a.address]?.at ?? now;
+        idle[a.address] = busy ? 0 : options().dev && this.dev.desks ? DESK_AGES[this.dev.desks] : now - lastActive[a.address];
+      }
+      list = byLastActive(list, lastActive);
       this.list = list;
       const d = this.dev;
       const dev = options().dev ? {
@@ -602,9 +619,10 @@ export default class Office extends View {
         onFire: (v, cx) => this.fire(v, cx),
         pets: d.pets, onPets: (v, cx) => { d.pets = v; cx.notify(); },
         onWander: (cx) => this.wanderTick(cx, true),
+        desks: d.desks, onDesks: (v, cx) => { d.desks = v; cx.notify(); },
       } : null;
       const walk = Object.fromEntries(Object.entries(this.walk ?? {}).filter(([, w]) => w.phase !== "home").map(([k, w]) => [k, w.phase]));
-      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk }); }
+      try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk, idle }); }
       catch (e) { return div().p(8).bg("#fff").child(txt(`ERR ${e?.message ?? e}`, 12, "#a8322a")); }
     }
     if (role === "rail") {

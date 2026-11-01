@@ -34,6 +34,7 @@ work. The more of them are working, the more excited you get. See
 | After 10pm | A nightcap. "still at it?" |
 | Nothing for 10 minutes | Back in the chair, dozing. "z Z", and now and then "popcorn's getting cold" |
 | 10+ agents seen this session | Eyes darting about. "how many are there?" |
+| Desks | In last-active order: whoever's working first, then the one that stopped most recently. A desk left alone for an hour gets a cobweb; after 8 hours it's covered, screen dusty. |
 | Agents busy (now and then) | One of the pets gets up and wanders off the edge, back 25-75s later: Buddy out the left, Snowy and Simba out the right. Never while nothing is running. |
 | Something shipped | Explosion with a PR MERGED, DEPLOYED or IT'S LIVE banner, bigger the first time. "KABOOM!" (needs the Claude Code hook, see below) |
 
@@ -69,6 +70,7 @@ herdr-app do sitandwatch.level-3          # or level-real
 herdr-app do sitandwatch.mood-allBlocked  # any mood name, or mood-auto
 herdr-app do sitandwatch.fire-streak      # finish, phone, collapse, burst, error, welcome, poke, merged, ...
 herdr-app do sitandwatch.chaos            # chaos mode on for good, or off again
+herdr-app do sitandwatch.desks-8h         # pretend idle desks are 1h or 8h old (cobwebs), or desks-real
 ```
 
 ## Installation
