@@ -127,13 +127,16 @@ export const FLOORS = {
   sage: { name: "Sage", color: "#95a88a" },
   navy: { name: "Night navy", color: "#2e3a55" },
 };
-export const DEFAULT_OPTIONS = { floor: "slate", pets: { Buddy: true, Snowy: true, Simba: true }, speech: true, chaos: false, dev: false };
+// Panel heights the Options dialog offers (px); null leaves the block the size the layout gives it.
+export const HEIGHTS = [240, 300, 400, 500];
+export const DEFAULT_OPTIONS = { height: null, floor: "slate", pets: { Buddy: true, Snowy: true, Simba: true }, speech: true, chaos: false, dev: false };
 
 // Whatever is stored, as a complete, valid options object (unknown or broken values fall back).
 export function readOptions(raw) {
   const o = raw && typeof raw === "object" ? raw : {};
   const pets = o.pets && typeof o.pets === "object" ? o.pets : {};
   return {
+    height: HEIGHTS.includes(o.height) ? o.height : null,
     floor: Object.hasOwn(FLOORS, o.floor) ? o.floor : DEFAULT_OPTIONS.floor,   // own keys only: not "toString"
     pets: Object.fromEntries(Object.keys(DEFAULT_OPTIONS.pets).map((k) => [k, pets[k] !== false])),
     speech: o.speech !== false,
@@ -202,6 +205,12 @@ export function findBlock(tree) {
 // Minimised, and the block now reads big again (dragged open, another layout): show the full panel.
 // Not in the first moments after shrinking, while Herdr catches up.
 export const shouldClearMin = (sizePx, minAt, now) => now - minAt > MIN_GUARD_MS && Number.isFinite(sizePx) && sizePx >= MIN_OPEN;
+// The height to set now, or null: a chosen height not yet applied, for a block in a column (in a
+// row, docked left or right, its size is a width), and never while it's minimised.
+export function heightToApply(height, applied, b, minimised) {
+  if (!height || height === applied || minimised || !b?.ok || b.axis !== "column") return null;
+  return b.size?.px === height ? null : height;
+}
 // A saved strip only comes back where it belongs: the same block on the same axis, still strip-sized
 // (another layout reusing the id, or a Herdr restart that put the block back to full size, drop it).
 // Forgotten only on positive evidence: a different block or axis, or a px size that's open; with no
