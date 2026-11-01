@@ -7,7 +7,14 @@ desks. You are the developer in the red velvet armchair in the corner, watching 
 work. The more of them are working, the more excited you get. See
 [sitandwatch/RECIPE.md](sitandwatch/RECIPE.md) for how it is built.
 
-<img src="sitandwatch/demo.gif" width="270" alt="Sit &amp; Watch demo mode cycling through every state">
+<table>
+<tr><td align="center" valign="top"><img src="sitandwatch/media/ovation.gif" width="250" alt="Four or more working: standing ovation"><br>Four or more working: standing ovation</td><td align="center" valign="top"><img src="sitandwatch/media/finished.gif" width="250" alt="One finished: party popper"><br>One finished: party popper</td><td align="center" valign="top"><img src="sitandwatch/media/phone.gif" width="250" alt="One needs you: the phone call"><br>One needs you: the phone call</td></tr>
+<tr><td align="center" valign="top"><img src="sitandwatch/media/merged.gif" width="250" alt="PR merged: KABOOM"><br>PR merged: KABOOM</td><td align="center" valign="top"><img src="sitandwatch/media/meltdown.gif" width="250" alt="All of them need you: meltdown"><br>All of them need you: meltdown</td><td align="center" valign="top"><img src="sitandwatch/media/are-you-sure.gif" width="250" alt="Every third block: "Are you sure?" "Yes""><br>Every third block: "Are you sure?" "Yes"</td></tr>
+<tr><td align="center" valign="top"><img src="sitandwatch/media/power.gif" width="250" alt="The power bar fills: POWER!"><br>The power bar fills: POWER!</td><td align="center" valign="top"><img src="sitandwatch/media/sub-agents.gif" width="250" alt="Claude Code sub-agents: 2/5 on one desk"><br>Claude Code sub-agents: 2/5 on one desk</td><td align="center" valign="top"><img src="sitandwatch/media/cobwebs.gif" width="250" alt="Old desks: cobwebs, and how long one has waited"><br>Old desks: cobwebs, and how long one has waited</td></tr>
+<tr><td align="center" valign="top"><img src="sitandwatch/media/empty-chair.gif" width="250" alt="Nothing running: the pets take the chair"><br>Nothing running: the pets take the chair</td><td></td><td></td></tr>
+</table>
+
+Each of these is one state of the demo (click the header). Recorded in Herdr; the header says which.
 
 ## What he does
 
@@ -35,7 +42,8 @@ work. The more of them are working, the more excited you get. See
 | Nothing for 10 minutes | Back in the chair, dozing. "z Z", and now and then "popcorn's getting cold" |
 | 10+ agents seen this session | Eyes darting about. "how many are there?" |
 | The power bar fills | The bar in the header fills with every second an agent works (20 agent-minutes: about 7 with three at it) and drains slowly when nothing runs. Full: he leaps up, "POWER!", confetti, the pets wide awake. Then it starts again. |
-| Desks | In last-active order: whoever's working first, then the one that stopped most recently. A finished agent you haven't looked at shows how long it's been waiting on its screen (`12m`). A desk left alone for an hour gets a cobweb; after 8 hours it's covered, screen dusty. |
+| Desks | Each labelled with its tab's name, or its space's (the project) while the tab has Herdr's number. In last-active order: whoever's working first, then the one that stopped most recently. A finished agent shows how long it's been waiting on its screen (`12m`) until you answer it: looking isn't enough, it goes once the agent works again. A desk left alone for an hour gets a cobweb; after 8 hours it's covered, screen dusty. |
+| Claude Code sub-agents | Shown on their session's desk as finished/total (`2/5`: five started, two finished), yellow while any run, green when all are done, gone 8 seconds later. They count as working agents: his level, the header count, the power bar, the welcome and the finish. Needs the sub-agent hook, see below. |
 | The pets, any time he's there | Buddy, Snowy and Simba sit by the chair giving him a half-lidded side-eye. Meltdown: Buddy covers his eyes. Standing ovation: the cats turn their backs. Something ships: Buddy howls. After 10pm Simba's out. The loudest moment wins. |
 | One crashed or needs you (popcorn spilled) | Buddy goes for the popcorn and eats it down over a minute. |
 | Two or more at it for 10+ minutes | A cat knocks his can off the armrest (from the chair back once the pillow's there). |
@@ -47,14 +55,17 @@ Mostly Claude Code agents get a knowing nod, mostly Codex a side-eye, a mix "the
 From level 2 there's a can on the armrest, and his scarf leans toward the colour of whoever's doing
 most of the work. Each state has a pool of lines, shuffled per session. Click him and he talks back.
 
-Click the header, or run `herdr-app do sitandwatch.demo`, to cycle through all 24 states with labels
-(the animation above is one cycle).
+Click the header, or run `herdr-app do sitandwatch.demo`, to cycle through all 27 states with labels
+(`demo-<n>` opens it at state n).
 Click a desk to jump to that agent.
 
 ### Minimise
 
 Click **\_** at the right of the header (or run `herdr-app do sitandwatch.min`) to shrink the panel to a
-30px strip: the count, the power bar and his face, still reacting. In the sidebar it's a strip; docked
+30px strip: the count, the power bar and his face, still reacting.
+
+<img src="sitandwatch/media/minimised.png" width="322" alt="Minimised: 1/5 AT IT, the power bar, his face and +">
+ In the sidebar it's a strip; docked
 on the left or right of the window it's a 40px rail. Click **+** to bring it back to the size it had, or
 drag it open. If Herdr can't shrink it (no id on its block, two Sit & Watch panels, or a block `min`
 over 30), a message says why. Bring it back before removing the mod, or drag the block open after.
@@ -71,6 +82,13 @@ Click **OPTS** in the panel's header, or run `herdr-app do sitandwatch.options`,
 - **Chaos mode** and **developer mode**, the same as their commands below.
 
 Choices are kept in Herdr's shared state, so they survive restarts.
+
+### Screenshot mode
+
+If the [screenshot mode](https://github.com/funny-it-worked-last-time-gsv/herdr-screenshot-mode) mods are
+installed and switched on, every name Sit & Watch draws follows them: a renamed space or tab shows its alias
+(`football-shares-frontend` as `FS-fe`), a hidden one its stand-in (`Space 2`, or the program's name for a tab).
+Off, or not installed, names show as they are. `privacy.js` is screenshot mode's own file, copied in unchanged.
 
 ### Developer mode
 
@@ -101,12 +119,24 @@ Ask your agent to add this mod (it reads every file first), or by hand:
    (`herdr-app do layout.clone '{"name":"main"}'` makes and switches to `main-copy`) and edit the
    copy. Keep the id `sitandwatch`.
 
-For the explosion on `git push`, `gh pr merge` or a production `vercel` deploy, install the Claude
-Code hook in `sitandwatch/hooks/` (setup in [RECIPE.md](sitandwatch/RECIPE.md#ship-hook)).
+Two optional Claude Code hooks live in `sitandwatch/hooks/`:
+
+- **Ship:** the explosion on `git push`, `gh pr merge` or a production `vercel` deploy (setup in
+  [RECIPE.md](sitandwatch/RECIPE.md#ship-hook)).
+- **Sub-agents:** the `2/5` count. Copy `sitandwatch-subagents.py` to `~/.claude/hooks/` and add it to
+  `~/.claude/settings.json` for both events:
+  ```json
+  "hooks": {
+    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/sitandwatch-subagents.py", "async": true, "timeout": 10 }] }],
+    "SubagentStop":  [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/sitandwatch-subagents.py", "async": true, "timeout": 10 }] }]
+  }
+  ```
+  It runs `herdr-app do sitandwatch.sub-start-<terminal>-<agent id>` (or `sub-stop-...`), using the
+  `HC_TERMINAL_ID` Herdr gives each terminal, and never blocks or fails Claude Code.
 
 Delete the folder and that block to remove it (restore it first if minimised). It makes no network requests, runs no programs other than
 `hc ls` and `hc get` (to see background agents, crashes and how long each agent has been busy) and
-reads no files outside its folder. Nothing animates while
+reads no files outside its folder (it reads screenshot mode's choices from Herdr's shared state). Nothing animates while
 nothing is happening.
 
 ## Credits
