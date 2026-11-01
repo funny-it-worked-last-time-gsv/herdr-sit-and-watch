@@ -1396,6 +1396,20 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   reject?.(new Error("late")); await S.settle(); await S.settle();
   let hl = null; try { hl = JSON.parse(localStorage.getItem("height")); } catch {}
   if (hl?.h !== 300) fails.push(`fixes2: a late refusal shouldn't undo a newer choice, height=${JSON.stringify(hl)}`);
+  // A choice that needs no resize still cancels an older pending refusal.
+  world.layout = lay(300); localStorage.removeItem("height"); world.runs = [];
+  let rejectB; world.runResult = () => new Promise((_, rj) => { rejectB = rj; });
+  world.shared["sitandwatch.options"] = { height: 400 }; S.advance(1000);
+  world.runResult = null; world.layout = lay(240); world.shared["sitandwatch.options"] = { height: 240 }; S.advance(1000);   // dragged to 240, then chose 240 (500 is still waiting out a refusal above)
+  rejectB?.(new Error("late")); await S.settle(); await S.settle();
+  let hb = null; try { hb = JSON.parse(localStorage.getItem("height")); } catch {}
+  if (hb?.h !== 240 || hb?.from?.px !== 300) fails.push(`fixes2: a no-resize choice should outlive an older refusal, height=${JSON.stringify(hb)}`);
+    // Another copy minimised the panel: the copy that plans heights sees it (shared storage), and doesn't resize.
+  world.layout = lay(30); localStorage.removeItem("height"); world.runs = [];
+  localStorage.setItem("min", JSON.stringify({ id: "sitandwatch", axis: "column", saved: { px: 300 }, at: 0, seen: 30 }));
+  world.shared["sitandwatch.options"] = { height: 300 }; S.advance(1000);
+  if (sized().length) fails.push(`fixes2: a height shouldn't be applied while another copy has the panel minimised, got ${sized()}`);
+  localStorage.removeItem("min");
   // ABA: 400 refused late, after 300 then 400 again went through: the newer 400 (and its old size) stay.
   world.layout = lay(250); localStorage.removeItem("height"); world.runs = [];
   let rejectA; world.runResult = () => new Promise((_, rj) => { rejectA = rj; });
@@ -1408,7 +1422,9 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   // A restart's re-apply isn't used up while the block is settling after a restore.
   localStorage.setItem("height", JSON.stringify({ id: "sitandwatch", h: 400, from: { px: 300 } }));
   world.layout = lay(300); world.shared[OPTKEY] = { height: 400 };
-  const h4 = new Office(); h4.init(world.props, makeCx()); h4.restoredAt = clock.now; world.runs = []; S.advance(1000);
+  const h4 = new Office(); h4.init(world.props, makeCx());
+  h4.setMin({ id: "sitandwatch", axis: "column", saved: { px: 300 }, at: clock.now - 10000, seen: 30 }); h4.minBusy = false;
+  world.runs = []; h4.minimise(makeCx()); world.runs = []; S.advance(1000);   // a real restore ("+"): then settling
   if (sized().length) fails.push(`fixes2: nothing should be resized while settling, got ${sized()}`);
   S.advance(4000);
   if (!sized().includes('{"id":"sitandwatch","px":400}')) fails.push(`fixes2: the restart's re-apply should run once settled, got ${sized()}`);
