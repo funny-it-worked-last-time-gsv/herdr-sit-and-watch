@@ -72,7 +72,7 @@ const LISTS = {
   w1b2: ["working", "blocked", "blocked"], done1: ["done", "idle"],
 };
 const WAITS = { "0": 0, "3m": 3 * MIN, "6m": 6 * MIN, "10m+": 10 * MIN + 1000, "11m": 11 * MIN, "30m+": 30 * MIN + 1000, "60m+": 60 * MIN + 1000 };
-const FX = ["finishPump", "blockedPhone", "collapse", "newAgentWelcome", "errorWince", "burstDance", "streak", "areYouSure", "levelUp", "linger", "poke"];
+const FX = ["finishPump", "blockedPhone", "collapse", "newAgentWelcome", "errorWince", "burstDance", "streak", "areYouSure", "levelUp", "linger", "poke", "pushOff", "prOpened"];
 
 function moodCase(list, wait, away, hour, seen, fx, party) {
   const { o } = mount(hour);
