@@ -13,11 +13,30 @@ import subprocess
 import sys
 
 
+HEREDOC = re.compile(r"(?<!<)<<(?!<)-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+
+
+def strip_heredocs(cmd: str) -> str:
+    """The command without its here-document bodies (<<EOF ... EOF): they're data, like a commit message,
+    and their apostrophes ("isn't") would otherwise read as quotes. Not `<<<`, a one-word here-string."""
+    lines, out, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        for m in HEREDOC.finditer(line):
+            while i < len(lines) and lines[i].strip() != m.group(2):
+                i += 1
+            i += 1                                           # the closing delimiter line
+    return "\n".join(out)
+
+
 def steps(cmd: str) -> list:
     """The steps of a compound command, split on &&, ||, ;, | and newlines like the shell: never inside
     quotes, so a long quoted argument (a PR body, a commit message in "$(cat <<EOF ...)") stays one step
     and its lines aren't read as commands. One step at a time, so a dry-run flag only cancels the push
     it belongs to, not a `grep -n` elsewhere in the same command."""
+    cmd = strip_heredocs(cmd)
     out, cur, quote, i = [], [], None, 0
     while i < len(cmd):
         c = cmd[i]
