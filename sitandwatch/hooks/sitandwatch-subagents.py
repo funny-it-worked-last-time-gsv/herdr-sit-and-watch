@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """SubagentStart / SubagentStop hook: tell the Sit & Watch panel in the Herdr app when one of this
-Claude Code session's sub-agents (the Agent tool) starts and stops, so it gets a desk, counts as
-working and sets off the welcome and the finish. Never blocks or fails anything.
+Claude Code session's sub-agents (the Agent tool) starts and stops, so it shows on the session's desk
+as done/total (2/5), counts as working and sets off the welcome and the finish. Never blocks or fails
+anything.
 
 Sends `herdr-app do sitandwatch.sub-start-<terminal>-<agent id>` (or sub-stop-...), where <terminal> is
 the Herdr terminal this session runs in (HC_TERMINAL_ID) and the agent id pairs the start with its stop."""
