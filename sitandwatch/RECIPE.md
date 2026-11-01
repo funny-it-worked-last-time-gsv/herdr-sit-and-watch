@@ -145,7 +145,10 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 
 ## Built from
 
-- `mods/sitandwatch/mod.json`: `{ "place": "left", "size": 280, "title": "Sit & Watch" }`.
+- `mods/sitandwatch/mod.json`: `{ "place": "none", "size": 300, "title": "Sit & Watch" }`. Herdr doesn't
+  dock it; the install puts it in the bottom-left corner unless the person asks otherwise: a block
+  `{ "id": "sitandwatch", "type": "block", "content": { "mod": "sitandwatch" }, "size": { "px": 300 } }`
+  in the layout's `sidebar` column, just before `sidebar-footer` (clone a shipped layout first).
 - `mods/sitandwatch/panel.js`: the panel (`panel(list, party, opts)`), desks, `devLevel(list)` and
   `resolveMood(m, level)`.
 - `mods/sitandwatch/lines.js`: what he says, `pool()` and `pickLine()`.
