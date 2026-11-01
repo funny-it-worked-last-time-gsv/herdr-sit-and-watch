@@ -1245,6 +1245,13 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (sized().length) fails.push("height: a minimised panel shouldn't be resized");
   o2.min = null; S.advance(1000);
   if (JSON.stringify(sized()) !== "[500]") fails.push(`height: once it's not minimised the new height should apply, got ${JSON.stringify(sized())}`);
+  // Fix-check: a typo is ignored, not turned into "layout"; a refused resize says so.
+  await send("height-350"); await send("height-350");
+  if (R.readOptions(world.shared["sitandwatch.options"]).height !== 500) fails.push(`height: height-350 should be ignored, got ${R.readOptions(world.shared["sitandwatch.options"]).height}`);
+  world.notes = []; world.runResult = () => ({ error: "no room" });
+  world.shared["sitandwatch.options"] = { ...world.shared["sitandwatch.options"], height: 240 }; S.advance(1000);
+  if (!world.notes.some((n) => /refused to set my height to 240px: no room/.test(n.body))) fails.push(`height: a refused resize should toast, notes ${JSON.stringify(world.notes)}`);
+  world.runResult = null;
   world.runs = []; await send("height-layout"); await send("height-layout"); S.advance(1000);
   if (R.readOptions(world.shared["sitandwatch.options"]).height !== null || sized().length) fails.push("height: height-layout should hand the size back to the layout without resizing");
   world.layout = null;
