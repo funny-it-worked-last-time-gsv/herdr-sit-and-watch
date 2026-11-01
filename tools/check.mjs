@@ -1309,6 +1309,77 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (!ids(tb).includes("pet-Simba-sit")) fails.push("knock: a knockBack Simba should stay drawn too");
 }
 
+// ---- ship run 2 review fixes ----------------------------------------------------------------
+{
+  // Value: protects=a fresh finish time after done→working→done between polls; a restart's height re-apply retried after a
+  //   refusal; a refused "layout" restore rolled back and retried; a new choice not held up by an old refusal's wait; a late
+  //   refusal not undoing a newer choice; no planning while the block still reads strip-sized; keepMin trusting the size seen
+  //   after the shrink; a stopped sub-agent staying stopped on a late start; fails_when=any of those rules is reverted;
+  //   why_new=found by the ship's batched specialist and red team (run 2); seam=none; no_claim=Herdr's real resize timing
+  const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
+  const mn = { id: "sitandwatch", axis: "column", saved: { px: 300 }, at: 0, seen: 300 }, blk = (px) => ({ ok: true, id: "sitandwatch", axis: "column", size: { px } });
+  if (!R.keepMin(mn, blk(300), 1e9)) fails.push("fixes2: keepMin should keep a strip whose block still reads the size seen after the shrink");
+  if (R.keepMin({ ...mn, seen: 30 }, blk(300), 1e9)) fails.push("fixes2: keepMin should drop a strip whose block reads open (not what was seen)");
+  const strip = R.planHeight({ height: 400, saved: null, b: blk(30), minimised: false, first: false });
+  if (strip.resize || strip.saved) fails.push(`fixes2: planHeight should wait while the block reads strip-sized, got ${JSON.stringify(strip)}`);
+
+  // done → working → done between two polls: the second finish is fresh, not the first one hc gave.
+  S.dropCommandWaiters();
+  const { o } = mount();
+  const t1 = clock.now - 5 * 60 * MIN;
+  world.hcLs = { terminals: [{ address: "a0", state: "live", status: "done", name: "t0" }] };
+  world.hcGet = { a0: { status: { state: "done" }, status_ms: t1 } };
+  render(o, ["done"]); S.advance(10000); await S.settle(); await S.settle(); render(o, ["done"]);
+  if (o.waiting?.a0 !== t1) fails.push(`fixes2: the first finish should come from hc, got ${o.waiting?.a0} want ${t1}`);
+  jump(2000); render(o, ["working"]); jump(3000); render(o, ["done"]);
+  if (!(o.waiting?.a0 > t1 + 60 * MIN)) fails.push(`fixes2: a second finish between polls should be fresh, got ${o.waiting?.a0} (first was ${t1})`);
+  world.hcLs = { terminals: [] }; world.hcGet = {};
+
+  // A stopped sub-agent stays stopped when a late start arrives.
+  o.subEvent({ verb: "start", parent: "a0", id: "late1" }, makeCx()); o.subEvent({ verb: "stop", parent: "a0", id: "late1" }, makeCx());
+  const done1 = o.subs.late1?.doneAt; o.subEvent({ verb: "start", parent: "a0", id: "late1" }, makeCx());
+  if (o.subs.late1?.doneAt !== done1) fails.push("fixes2: a start after a stop shouldn't revive a sub-agent");
+
+  // Height: a restart's re-apply refused, then retried.
+  const lay = (px) => ({ id: "root", type: "row", children: [{ id: "sidebar", type: "column", children: [{ id: "sitandwatch", type: "block", content: { mod: "sitandwatch" }, size: { px } }] }] });
+  const sized = () => world.runs.filter(([n]) => n === "layout.resize").map(([, a]) => JSON.stringify(a));
+  const OPTKEY = "sitandwatch.options";
+  S.dropCommandWaiters();
+  const { o: h } = mount();
+  world.layout = lay(300); world.shared[OPTKEY] = { height: 400 };
+  localStorage.setItem("height", JSON.stringify({ id: "sitandwatch", h: 400, from: { px: 300 } }));
+  const h2 = new Office(); h2.init(world.props, makeCx());              // a restart: the block is back at 300
+  world.runs = []; world.notes = []; world.runResult = () => ({ error: "busy" }); S.advance(1000);
+  world.runResult = null; S.advance(31000);
+  if (JSON.stringify(sized()) !== JSON.stringify(['{"id":"sitandwatch","px":400}', '{"id":"sitandwatch","px":400}'])) fails.push(`fixes2: a refused re-apply after a restart should be retried, got ${sized()}`);
+  // A restart whose first tick can't read the layout yet still re-applies once it can.
+  localStorage.setItem("height", JSON.stringify({ id: "sitandwatch", h: 400, from: { px: 300 } }));
+  world.layout = null; const h3 = new Office(); h3.init(world.props, makeCx()); world.runs = []; S.advance(1000);
+  world.layout = lay(300); S.advance(1000);
+  if (!sized().includes('{"id":"sitandwatch","px":400}')) fails.push(`fixes2: a restart's re-apply should wait for a readable layout, got ${sized()}`);
+  // "layout" refused: rolled back, retried.
+  world.layout = lay(400); world.runs = []; world.runResult = () => ({ error: "busy" });
+  world.shared[OPTKEY] = { height: null }; S.advance(1000);
+  let hs = null; try { hs = JSON.parse(localStorage.getItem("height")); } catch {}
+  if (hs?.h !== 400) fails.push(`fixes2: a refused "layout" should keep what was set (to retry), got ${JSON.stringify(hs)}`);
+  world.runResult = null; S.advance(31000);
+  if (!sized().includes('{"id":"sitandwatch","px":300}')) fails.push(`fixes2: a refused "layout" should be retried and give 300 back, got ${sized()}`);
+  // A new choice right after a refusal isn't held up.
+  world.layout = lay(300); localStorage.removeItem("height"); world.runs = []; world.runResult = () => ({ error: "busy" });
+  world.shared[OPTKEY] = { height: 500 }; S.advance(1000); world.runResult = null;
+  world.shared[OPTKEY] = { height: 240 }; S.advance(1000);
+  if (!sized().includes('{"id":"sitandwatch","px":240}')) fails.push(`fixes2: a new choice after a refusal should go at once, got ${sized()}`);
+  // A late refusal doesn't undo a newer choice.
+  world.layout = lay(240); localStorage.removeItem("height"); world.runs = [];
+  let reject; world.runResult = () => new Promise((_, rj) => { reject = rj; });
+  world.shared[OPTKEY] = { height: 400 }; S.advance(1000);
+  world.runResult = null; world.layout = lay(400); world.shared[OPTKEY] = { height: 300 }; S.advance(1000);   // (500 is still waiting out its refusal above)
+  reject?.(new Error("late")); await S.settle(); await S.settle();
+  let hl = null; try { hl = JSON.parse(localStorage.getItem("height")); } catch {}
+  if (hl?.h !== 300) fails.push(`fixes2: a late refusal shouldn't undo a newer choice, height=${JSON.stringify(hl)}`);
+  world.layout = null; world.runs = []; world.shared[OPTKEY] = {};
+}
+
 // ---- the power bar: a terminal both in agents() and in hc's list counts once ---------------
 {
   // Value: protects=powerTick() and the panel list taking each address once when a terminal is both in agents() and in the

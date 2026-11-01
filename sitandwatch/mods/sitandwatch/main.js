@@ -325,13 +325,14 @@ export default class Office extends View {
   // (a restart puts the block back to the layout's size), and again whenever it's changed.
   heightTick(token) {
     try { if (localStorage.getItem(OWNER) !== token) return; } catch { return; }
-    const now = Date.now(), first = !this.heightTicked;
-    this.heightTicked = true;
-    if (now < (this.heightRetryAt ?? 0)) return;               // refused a moment ago: try again later
+    const now = Date.now(), first = !this.heightTicked, h = options().height;
+    // refused a moment ago: wait before trying that same choice again (a different choice goes now)
+    if (now < (this.heightRetryAt ?? 0) && this.heightRetryFor === h) return;
     let b = null; try { b = findBlock(layout()); } catch {}
     let saved = null; try { saved = JSON.parse(localStorage.getItem("height") ?? "null"); } catch {}
-    const h = options().height;
     const plan = planHeight({ height: h, saved, b, minimised: !!this.min, first });
+    // the first look counts once there's a block to look at and it isn't minimised (a restart's re-apply waits for that)
+    if (b && (b.ok || b.reason === "min") && !this.min) this.heightTicked = true;
     const store = (v) => { try { v ? localStorage.setItem("height", JSON.stringify(v)) : localStorage.removeItem("height"); } catch {} };
     if (JSON.stringify(plan.saved) !== JSON.stringify(saved)) store(plan.saved);
     // Anything that stops it says so once per choice, like minimise; nothing fails silently.
@@ -344,7 +345,14 @@ export default class Office extends View {
     if (plan.warn) return say(plan.warn);
     if (!plan.resize) return;
     // Refused (now or later): forget it was set and retry in 30s, saying so once.
-    const refused = (e) => { store(saved); this.heightRetryAt = Date.now() + 30000; say("failed", e); };
+    const wrote = JSON.stringify(plan.saved);
+    const refused = (e) => {
+      // roll back only what this resize wrote (a newer choice since stays); look again as if fresh
+      let cur = null; try { cur = localStorage.getItem("height"); } catch {}
+      if ((cur ?? "null") === wrote) store(saved);
+      this.heightRetryAt = Date.now() + 30000; this.heightRetryFor = h; this.heightTicked = false;
+      say("failed", e);
+    };
     try {
       const r = run("layout.resize", { id: b.id, ...plan.resize });
       if (r?.error) refused(r.error);
@@ -459,7 +467,11 @@ export default class Office extends View {
     const m = this.m, now = Date.now();
     // When each agent entered its status: hc's status_ms when it agrees, else when we saw it change.
     const local = {};
-    for (const a of list) local[a.address] = m.local[a.address]?.status === a.status ? m.local[a.address] : { status: a.status, at: now };
+    for (const a of list) {
+      const was = m.local[a.address];
+      if (was && was.status !== a.status) delete m.hcSince[a.address];   // hc's time is for the old status: ask again
+      local[a.address] = was?.status === a.status ? was : { status: a.status, at: now };
+    }
     m.local = local;
     const since = (a) => (m.hcSince[a.address]?.status === a.status ? m.hcSince[a.address].at : null) ?? local[a.address].at;
     const working = list.filter((a) => a.status === "working"), blocked = list.filter((a) => a.status === "blocked");
