@@ -169,6 +169,18 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - Based on [zuccs/herdr-office-layout](https://github.com/zuccs/herdr-office-layout) (MIT): its
   `art.js` helpers, palette, font and office view.
 
+## Options
+
+- `options.js`: the Options dialog, opened from OPTS in the header (its own `on_mouse_down` /
+  `on_click` stop propagation, so the header's demo toggle doesn't fire) or
+  `herdr-app do sitandwatch.options`, as `openOverlay({ mod: "sitandwatch", kind: "dialog", width: 380,
+  height: 470, props: { options: true } })`. With `props().options` the view skips the panel's timers
+  and draws the dialog: floor (`FLOORS` in `rules.js`, slate `#6b7a8f` by default), pets on/off,
+  speech bubbles on/off, chaos and developer mode.
+- Stored in `shared("sitandwatch.options")`, read through `readOptions()` (any missing or broken value
+  falls back to the default). Shared rather than `localStorage`, which is per copy: the dialog is a
+  copy of its own.
+
 ## Watch out
 
 - Herdr cuts a render off ("This view could not be re-rendered ... interrupted") when it runs too

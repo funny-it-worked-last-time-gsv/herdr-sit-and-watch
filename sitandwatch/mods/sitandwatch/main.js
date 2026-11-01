@@ -1,6 +1,7 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { agents, hc, nextCommand, spaces, panes, props, run, setAgentOrder, knownAgents } from "herdr";
+import { options, setOption, optionsDialog, openOptions } from "./options.js";
 import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H } from "./art.js";
 import { panel } from "./panel.js";
 import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel } from "./rules.js";
@@ -95,6 +96,8 @@ const roleOf = (p) => p?.role ?? "panel";
 
 export default class Office extends View {
   init(_p, cx) {
+    // Opened as the Options dialog: just that, none of the panel's timers.
+    if (props()?.options) { this.handle = cx.focus_handle(); return; }
     this.size = { width: 1200, height: 420 };
     this.seed = Math.floor(Math.random() * 2 ** 31);
     this.trips = {};     // address → { phase: enter|going|there|back, path, i, until, spot, hurry }
@@ -145,7 +148,7 @@ export default class Office extends View {
         local: {}, hcSince: {}, finishes: [], seen: new Set(), finishedSeen: null, prevAddrs: null,
         prevWorking: 0, welcomeAddr: null, lastUser: Date.now(), lastFocus: undefined, bornAt: Date.now(), ships: 0,
         seed: this.seed, lastBusy: Date.now(), byAddr: {}, streakAddr: null, blocks: 0, aysAddr: null,
-        prevLevel: 0, pokeLine: "", chaos: (() => { try { return localStorage.getItem("chaos") === "1"; } catch { return false; } })(),
+        prevLevel: 0, pokeLine: "",
         ...Object.fromEntries(ONE_SHOTS.map((k) => [k, 0])),
       };
       poll(cx);
@@ -167,7 +170,8 @@ export default class Office extends View {
       // stage 0 draws it squashed, stage 1 a moment later lets transition() blow it out, then it clears.
       this.ship = null;
       // developer mode: `herdr-app do sitandwatch.dev`, remembered across restarts
-      this.dev = { on: (() => { try { return localStorage.getItem("dev") === "1"; } catch { return false; } })(), mood: null, level: null };
+      // developer mode's pins; whether it's on is an option (shared, so the Options dialog sees it)
+      this.dev = { mood: null, level: null };
       // A reload or a rebuilt view leaves the old loop below waiting too, and its cx keeps working,
       // so it would take commands and change a view nobody sees. The newest panel claims the
       // commands; an older loop that gets one hands it on and stops. localStorage, not setShared:
@@ -181,17 +185,10 @@ export default class Office extends View {
           try { mine = localStorage.getItem(OWNER) === token; cx.notify(); } catch { mine = false; }
           if (!mine) { try { run(`sitandwatch.${c}`); } catch {} return; }
           if (c === "demo") { this.toggleDemo(); cx.notify(); }
-          if (c === "dev") {
-            this.dev = { on: !this.dev.on, mood: null, level: null };
-            try { localStorage.setItem("dev", this.dev.on ? "1" : "0"); } catch {}
-            cx.notify();
-          }
+          if (c === "dev") { this.dev = { mood: null, level: null }; setOption({ dev: !options().dev }); cx.notify(); }
           // `herdr-app do sitandwatch.chaos` turns chaos mode on for good (or off again)
-          if (c === "chaos") {
-            this.m.chaos = !this.m.chaos;
-            try { localStorage.setItem("chaos", this.m.chaos ? "1" : "0"); } catch {}
-            cx.notify();
-          }
+          if (c === "chaos") { setOption({ chaos: !options().chaos }); cx.notify(); }
+          if (c === "options") openOptions();
           // ship, ship-merged, ship-deployed: the hook says what shipped, for the banner
           if (c === "ship" || c.startsWith("ship-")) this.boom(c.slice(5), cx);
           // developer mode from the command line too: fire-<event>, mood-<name|auto>, level-<0..3|real>
@@ -227,7 +224,7 @@ export default class Office extends View {
     if (ev === "welcome") m.welcomeAddr = first;
     if (ev === "yes?") m.aysAddr = first;
     if (ev === "poke") m.pokeLine = pickLine("poke", Math.floor(Math.random() * POKES));
-    if (ev === "chaos") m.chaos = !m.chaos;
+    if (ev === "chaos") setOption({ chaos: !options().chaos });
     if (ev === "pushed" || ev === "merged" || ev === "deployed") return this.boom(ev, cx);
     cx.notify();
   }
@@ -284,7 +281,7 @@ export default class Office extends View {
       working: working.length, blocked: blocked.length, longestWorkingMs, longestBlockedMs, longestBlockedAddr,
       welcomeAddr: m.welcomeAddr, userIdleMs: now - m.lastUser, hour: new Date().getHours(), seen: m.seen.size,
       idleMs: working.length ? 0 : now - m.lastBusy, streakAddr: m.streakAddr, aysAddr: m.aysAddr,
-      seed: m.seed, chaos: m.chaos, pokeLine: m.pokeLine,
+      seed: m.seed, chaos: options().chaos, pokeLine: m.pokeLine,
       fx: Object.fromEntries(ONE_SHOTS.map((k) => [k, m[k]])),
     };
   }
@@ -520,6 +517,7 @@ export default class Office extends View {
 
   render() {
     const p = props() ?? {}, role = roleOf(p);
+    if (p.options) return optionsDialog(this.handle);
     this.demo = !!p.demo;
     if (role === "pane") {
       const pane = panes().find((x) => x.pane === p.pane);
@@ -565,7 +563,7 @@ export default class Office extends View {
       this.prevStatus = Object.fromEntries(list.map((a) => [a.address, a.status]));
       this.list = list;
       const d = this.dev;
-      const dev = d.on ? {
+      const dev = options().dev ? {
         mood: d.mood, level: d.level, open: d.open,
         onOpen: (cx) => { d.open = !d.open; cx.notify(); },
         onMood: (v, cx) => { d.mood = v; cx.notify(); },

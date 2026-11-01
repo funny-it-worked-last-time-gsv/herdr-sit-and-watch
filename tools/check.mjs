@@ -43,7 +43,7 @@ function mount(hour = 12) {
   clock.now = atHour(hour); clock.timers.length = 0; reseed(1);
   localStorage.clear();
   world.props = { role: "panel" }; world.agents = []; world.runs = []; world.notes = [];
-  world.hcLs = { terminals: [] }; world.hcGet = {};
+  world.hcLs = { terminals: [] }; world.hcGet = {}; world.shared = {}; world.overlays = [];
   const cx = makeCx(), o = new Office();
   o.init(world.props, cx);
   return { o, cx };
@@ -103,7 +103,8 @@ function capturePins() {
     for (const fx of [null, "levelUp", "finishPump", "poke", "areYouSure"]) for (const level of [null, 0, 3]) {
       const { o } = mount();
       render(o, LISTS[list]);
-      o.dev = { on: true, mood, level, open: false };
+      world.shared["sitandwatch.options"] = { dev: true };   // developer mode is an option now
+      o.dev = { mood, level, open: false };
       if (fx) { o.m[fx] = 2; o.m.aysAddr = "a0"; o.m.pokeLine = "poke!"; }
       const tree = render(o, LISTS[list]);
       noErr(tree, `pin ${list}/${mood}`);
@@ -148,7 +149,8 @@ function oneShotState(o) { return Object.fromEntries(FX.map((k) => [k, o.m[k]]).
 function captureOneShots() {
   const { o } = mount();
   render(o, LISTS.w1);
-  o.dev = { on: true, mood: null, level: null, open: true };
+  world.shared["sitandwatch.options"] = { dev: true };
+  o.dev = { mood: null, level: null, open: true };
   const chips = ids(render(o, LISTS.w1)).filter((x) => x.startsWith("dev-fx-")).map((x) => x.slice(7));
   const fire = {};
   for (const ev of chips) {
@@ -157,7 +159,7 @@ function captureOneShots() {
     const before = clock.now;
     o.fire(ev, cx);
     fire[ev] = { fx: oneShotState(o), party: o.partyUntil ? o.partyUntil - before : 0, ship: o.ship?.banner ?? null,
-      addr: [o.m.streakAddr, o.m.welcomeAddr, o.m.aysAddr].join("/"), chaos: o.m.chaos };
+      addr: [o.m.streakAddr, o.m.welcomeAddr, o.m.aysAddr].join("/"), chaos: world.shared["sitandwatch.options"]?.chaos === true };   // chaos is an option now
   }
   const { o: c } = mount();
   render(c, LISTS.w1);
