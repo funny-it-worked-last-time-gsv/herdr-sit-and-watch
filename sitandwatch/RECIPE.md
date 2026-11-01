@@ -182,6 +182,18 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - Only a pet sitting or with its back turned wanders; a reaction (howl, paw, eat, knock) keeps it put.
 - Dev: `wander` in the pets row, or `herdr-app do sitandwatch.wander`, sends them all off now.
 
+## Desks: last-active order and cobwebs
+
+- Every poll asks `hc get` for each live agent's `status_ms`: busy ones every time, the rest once
+  per status (when they stopped). On render each agent's last-active time is now when it's working or
+  blocked, else that `status_ms` (or when this panel saw the change); `byLastActive()` in `rules.js`
+  sorts most recent first, ties keeping their order, so busy desks don't shuffle.
+- `cobwebLevel(idleMs)`: 1 after an hour (a web in the monitor's top-left corner), 2 after 8 hours (webs on
+  both monitor corners and under the desk, and a dusty `#c8ccd477` screen). Each web is one tinted
+  `svg("mods/sitandwatch/cobweb.svg")` (`cobweb-r.svg` mirrored), `#e6e9ef`, so they cost one div each.
+- Dev: the `desks` row (`real`, `1h`, `8h`), or `herdr-app do sitandwatch.desks-<1h|8h|real>`, pretends every
+  desk not busy is that old; only while developer mode is on. Demo state 25 "Old agents: cobwebs".
+
 ## Options
 
 - `options.js`: the Options dialog, opened from OPTS in the header (its own `on_mouse_down` /

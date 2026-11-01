@@ -254,7 +254,10 @@ const deref = (o) => Object.fromEntries(Object.entries(o).map(([k, i]) => [k, g.
 diffMap("mood", snap.moods, deref(g.moods));
 diffMap("pin", snap.pins, deref(g.pins));
 diffMap("ship", snap.ships, deref(g.ships));
-diffMap("demo", snap.demo.states, g.demo.map((i) => g.obs[i]));
+// Demo frames: the header's total ("DEMO 8/24") grows with each added demo state (ALLOWED.newDemoStates);
+// everything else in a frame, his mood, level and lines included, must match.
+const demoTotal = (o) => o.replace(/DEMO (\d+)\/\d+/, "DEMO $1/N");
+diffMap("demo", snap.demo.states.map(demoTotal), g.demo.map((i) => demoTotal(g.obs[i])));
 const chipsNow = snap.oneShots.chips.filter((c) => !ALLOWED.newChips.includes(c));
 if (JSON.stringify(chipsNow) !== JSON.stringify(g.oneShots.chips)) fails.push(`dev chips: was ${g.oneShots.chips}, now ${chipsNow}`);
 diffMap("fire", snap.oneShots.fire, g.oneShots.fire);
@@ -672,6 +675,58 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   const t = render(o, LISTS.idle3);
   if (!same(cut, ["home/null", "home/null", "home/null"]) || !same(after, ["home", "home", "home"]) || !allPetIds(t).includes("pet-Buddy-curl"))
     fails.push(`wander: stopping work mid-trip should send them home for good, at once ${cut}, later ${after}, saw ${allPetIds(t)}`);
+}
+
+// ---- desks in last-active order, old ones under cobwebs ----------------------------
+{
+  // Value: protects=desks sorted most-recently-active first (busy = now, else when they entered their status, from hc),
+  // ties keeping their order, and the cobweb levels (1h one web, 8h covered) from rules.js and as drawn;
+  // fails_when=the sort flips, ties reshuffle, a threshold moves, idle desks stop asking hc, or webs land on busy desks;
+  // why_new=nothing else checks desk order or cobwebs; seam=none;
+  // no_claim=Herdr's real status_ms values and svg tinting (stubbed hc, recorded svg elements)
+  const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
+  const order = (list, last) => R.byLastActive(list.map((address) => ({ address })), last).map((a) => a.address).join(",");
+  if (order(["a", "b", "c"], { a: 1, b: 3, c: 2 }) !== "b,c,a") fails.push(`desks: byLastActive should put b,c,a, got ${order(["a", "b", "c"], { a: 1, b: 3, c: 2 })}`);
+  if (order(["a", "b", "c", "d"], { a: 5, b: 5, c: 9, d: 5 }) !== "c,a,b,d") fails.push("desks: byLastActive should keep tied desks in their order");
+  if (order(["a", "b"], {}) !== "a,b") fails.push("desks: unknown times should keep the order");
+  const lv = [0, 59 * MIN, 60 * MIN, 8 * 60 * MIN - 1, 8 * 60 * MIN].map(R.cobwebLevel).join("");
+  if (lv !== "00112") fails.push(`desks: cobweb levels at 0, 59m, 1h, 8h-1ms, 8h should be 0,0,1,1,2, got ${lv.split("").join(",")}`);
+
+  // Live: hc says a1 went done 10h ago, a2 idle 2h ago, a3 idle 5 minutes ago; a0 is working.
+  const { o } = mount();
+  const sts = ["working", "done", "idle", "idle"], ago = [0, 10 * 60 * MIN, 2 * 60 * MIN, 5 * MIN];
+  world.hcLs = { terminals: sts.map((status, i) => ({ address: `a${i}`, state: "live", status, name: `t${i}` })) };
+  world.hcGet = Object.fromEntries(sts.map((st, i) => [`a${i}`, { status: { state: st }, status_ms: clock.now - ago[i] }]));
+  S.advance(10000); await S.settle(); await S.settle();
+  const asked = new Set(Object.keys(o.m.hcSince));
+  if (!["a1", "a2", "a3"].every((a) => asked.has(a))) fails.push(`desks: the poll should ask hc about idle and done agents too, asked ${[...asked]}`);
+  const t = render(o, sts);
+  const desks = ids(t).filter((x) => /^pd-a\d$/.test(x)).join(",");
+  if (desks !== "pd-a0,pd-a3,pd-a2,pd-a1") fails.push(`desks: order should be working, then 5m, 2h, 10h ago, got ${desks}`);
+  const webs = (a) => ids(t).filter((x) => x.startsWith(`pw-${a}-`)).sort().join(",");
+  if (webs("a0") || webs("a3")) fails.push(`desks: busy or recent desks should have no cobwebs, got ${webs("a0")} ${webs("a3")}`);
+  if (webs("a2") !== "pw-a2-1") fails.push(`desks: a desk idle 2h should have one web, got ${webs("a2") || "none"}`);
+  if (webs("a1") !== "pw-a1-1,pw-a1-2,pw-a1-3,pw-a1-dust") fails.push(`desks: a desk idle 10h should be covered, got ${webs("a1") || "none"}`);
+  noErr(t, "desks");
+
+  // Developer mode's desk age: every desk not busy looks 8h old; a busy one stays clean.
+  world.shared["sitandwatch.options"] = { dev: true };
+  o.dev.desks = "8h"; o.dev.open = true;   // the rows show with the buttons open
+  const t8 = render(o, sts);
+  const covered = ["a1", "a2", "a3"].filter((a) => ids(t8).includes(`pw-${a}-dust`)).length;
+  if (covered !== 3 || ids(t8).some((x) => x.startsWith("pw-a0-"))) fails.push(`desks: dev 8h should cover the 3 idle desks and not the busy one, covered ${covered}`);
+  if (!ids(t8).includes("dev-dk-8h")) fails.push("desks: the dev strip should have the desks row");
+  world.shared["sitandwatch.options"] = { dev: false };     // like the pet scenes: only while dev mode is on
+  if (ids(render(o, sts)).includes("pw-a3-dust")) fails.push("desks: the dev desk age should be ignored with developer mode off");
+
+  // The demo's "Old agents" state shows both levels.
+  const { o: d } = mount();
+  d.demoAt = clock.now;
+  clock.now = d.demoAt + 24 * 5000;
+  const td = render(d, []);
+  const demoWebs = ids(td).filter((x) => x.startsWith("pw-"));
+  if (!demoWebs.some((x) => x.endsWith("-dust")) || !demoWebs.some((x) => /^pw-demo-[23]-1$/.test(x))) fails.push(`desks: the "Old agents" demo state should show a web and a covered desk, got ${demoWebs}`);
+  noErr(td, "desks demo");
 }
 
 const budget = g.budget.max + BUDGET_HEADROOM, over = snap.demo.counts.map((n, i) => [i + 1, n]).filter(([, n]) => n > budget);

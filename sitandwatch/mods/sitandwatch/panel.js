@@ -1,8 +1,8 @@
-import { div } from "gpui-kit";
+import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run } from "herdr";
 import { ink, SCREEN, r, txt, look, bot, spectator, stance, pets, explosion, DEV_W, DEV_H } from "./art.js";
-import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES, FLOORS } from "./rules.js";
+import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES, FLOORS, cobwebLevel, DESK_AGES } from "./rules.js";
 import { options, openOptions } from "./options.js";
 
 // ---- developer mode -------------------------------------------------------
@@ -32,7 +32,9 @@ function devStrip(dev, mood, level, m) {
     .child(row([txt("fire", 10, "#9aa3b0"), ...DEV_FIRE.map((k) => chip(k, false, (cx) => dev.onFire(k, cx), `fx-${k}`))]))
     .child(row([txt("pets", 10, "#9aa3b0"), ...["auto", ...Object.keys(PET_SCENES)].map((k) =>
       chip(k, (dev.pets ?? "auto") === k, (cx) => dev.onPets(k === "auto" ? null : k, cx), `pt-${k}`)),
-      chip("wander", false, (cx) => dev.onWander(cx), "pt-wander")])));
+      chip("wander", false, (cx) => dev.onWander(cx), "pt-wander")]))
+    .child(row([txt("desks", 10, "#9aa3b0"), ...["real", ...Object.keys(DESK_AGES)].map((k) =>
+      chip(k, (dev.desks ?? "real") === k, (cx) => dev.onDesks?.(k === "real" ? null : k, cx), `dk-${k}`))])));
 }
 
 
@@ -65,7 +67,23 @@ function arrow(sw, kind, addr) {
     .loop("left", { from: x - 3, to: x, period: 400 });
 }
 
-function desk(a, x, y, sw, rh, mark = null) {
+// Cobwebs on a desk left alone: 1, a web in the monitor's top-left corner; 2, covered: webs on both
+// corners and under the desk, and a dusty screen. One tinted svg each (cheap for Herdr's render).
+const WEB = "#e6e9ef";
+const web = (x, y, size, right, id) => div().absolute().left(x).top(y).id(id)
+  .child(svg(`mods/sitandwatch/${right ? "cobweb-r" : "cobweb"}.svg`).size(size).text_color(WEB));
+function cobwebs(sw, level, addr) {
+  if (!level) return [];
+  const mx = Math.round(sw / 2) - 16;                        // monitor's left edge
+  const out = [web(mx - 1, 3, 13, false, `pw-${addr}-1`)];
+  if (level >= 2) out.push(
+    r(mx + 2, 6, 28, 16, "#c8ccd477").id(`pw-${addr}-dust`),   // dust on the screen
+    web(mx + 20, 3, 13, true, `pw-${addr}-2`),
+    web(Math.round(sw / 2) + 14, 37, 11, false, `pw-${addr}-3`));
+  return out;
+}
+
+function desk(a, x, y, sw, rh, mark = null, idleMs = 0) {
   const scr = r(Math.round(sw / 2) - 16, 4, 32, 20, "#2b2f3a").child(r(2, 2, 28, 16, SCREEN[a.status] ?? SCREEN.idle)
     .when(a.status === "working", (e) => e.children([0, 1, 2].map((i) => r(4, 4 + i * 4, 6, 2, "#7ee0a0")
       .id(`pc-${a.address}-${i}`).loop("width", { from: 4, to: 20 - i * 4, period: 500 + i * 230 }))))
@@ -79,6 +97,7 @@ function desk(a, x, y, sw, rh, mark = null) {
     .child(r(Math.round(sw / 2) - 3, 24, 6, 3, "#2b2f3a"))
     .child(r(Math.round(sw / 2) - 26, 27, 52, 6, "#f0dcb0")).child(r(Math.round(sw / 2) - 26, 33, 52, 4, "#d4b27c"))
     .child(div().absolute().left(Math.round(sw / 2) - 12).top(28).child(body))
+    .children(cobwebs(sw, cobwebLevel(idleMs), a.address))
     .when(!!mark && mark !== "areYouSure", (e) => e.child(arrow(sw, mark, a.address)))
     // the meme: the agent asks, he answers from the chair
     .when(mark === "areYouSure", (e) => e.child(div().absolute().left(0).top(0).w(sw).flex().justify_center()
@@ -134,7 +153,7 @@ export function panel(list, party = false, opts = {}) {
       .child(txt(opts.label ? "STOP" : "DEMO", 10, opts.label ? "#ffd86a" : "#dfe6f0")))
     .when(!!dev, (e) => e.child(devStrip(dev, mood, level, m)))
     .child(div().id("saw-desks").flex().flex_wrap().justify_center().content_start().flex_1().w_full().overflow_hidden().pt(6)
-      .children(list.map((a) => desk(a, 0, 0, sw, rh, a.address === markAddr ? mood : null))))
+      .children(list.map((a) => desk(a, 0, 0, sw, rh, a.address === markAddr ? mood : null, opts.idle?.[a.address] ?? 0))))
     .child(div().flex().justify_center().w_full().h(cornerH).flex_none().bg(glow)
       .child(div().relative().w(devW).h(cornerH)
         .child(r(-12, cornerH - 16, devW + 24, 10, "#5e1420"))
