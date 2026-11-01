@@ -1,7 +1,7 @@
 // Every decision about his mood and the one-shot events, in one place and with no imports, so
 // main.js, panel.js and art.js ask here instead of each keeping its own copy of a rule.
 // tools/check.mjs holds a golden snapshot of these decisions; change a rule on purpose and
-// re-capture it (see RECIPE.md).
+// re-capture it (`node tools/check.mjs --capture`, see CLAUDE.md).
 
 export const MIN = 60 * 1000;
 export const LONG_IDLE = 10 * MIN;
@@ -163,6 +163,7 @@ export const DESK_AGES = { "1h": COBWEB_MS[0], "8h": COBWEB_MS[1] };
 export const POWER_FULL = 1200, POWER_STEPS = 20, POWER_DRAIN = 0.25, POWER_KEEP_MS = 60 * MIN;
 export function powerStep(power, working, hold = false) {
   let p = Number.isFinite(power) ? power : 0;
+  if (hold && p >= POWER_FULL) return { power: POWER_FULL, fire: false };   // held full: no drain while it waits
   p = working > 0 ? p + working : Math.max(0, p - POWER_DRAIN);
   if (p < POWER_FULL) return { power: p, fire: false };
   return hold ? { power: POWER_FULL, fire: false } : { power: 0, fire: true };
@@ -200,6 +201,11 @@ export function findBlock(tree) {
 // Minimised, and the block now reads big again (dragged open, another layout): show the full panel.
 // Not in the first moments after shrinking, while Herdr catches up.
 export const shouldClearMin = (sizePx, minAt, now) => now - minAt > MIN_GUARD_MS && Number.isFinite(sizePx) && sizePx >= MIN_OPEN;
+// A saved strip only comes back where it belongs: the same block on the same axis, still strip-sized
+// (another layout reusing the id, or a Herdr restart that put the block back to full size, drop it).
+export function keepMin(min, b) {
+  return min && b?.ok && b.id === min.id && b.axis === min.axis && Number.isFinite(b.size?.px) && b.size.px < MIN_OPEN ? min : null;
+}
 // The toasts for each reason minimising can't happen.
 export const MIN_TROUBLE = {
   none: "Can't find my block in this layout",
@@ -219,9 +225,12 @@ export const pileSize = (ticks) => (ticks < 30 ? 2 : ticks < 60 ? 1 : 0);
 // How long a finished agent has waited for you, on its desk: "<1m", "12m", "3h", "2d".
 // Agents waiting on you: { [address]: when it finished }. Set when one goes done, kept while it's
 // done or idle (Herdr turns done into idle as soon as you look, but you haven't answered yet),
-// cleared once it works or asks again, or leaves. atOf(a): when it entered done. Returns the new map.
-export function trackWaiting(waiting, list, atOf) {
+// cleared once it works or asks again, or leaves. atOf(a): when it entered done. keepMissing: also
+// keep entries whose agent isn't listed (before the first hc poll background helpers aren't listed
+// yet; they haven't left). Returns the new map.
+export function trackWaiting(waiting, list, atOf, keepMissing = false) {
   const out = {};
+  if (keepMissing) for (const [k, at] of Object.entries(waiting)) if (!list.some((a) => a.address === k)) out[k] = at;
   for (const a of list) {
     if (a.status === "done") out[a.address] = waiting[a.address] ?? atOf(a);
     else if (a.status === "idle" && waiting[a.address] != null) out[a.address] = waiting[a.address];
@@ -260,8 +269,10 @@ export function pruneSubs(subs, now) {
 }
 // The sub-agents as agents (working, or done once stopped), so the welcome, the finish, the power bar
 // and his metrics see them like any agent. Their address is `<parent>~<id>`; foldSubs puts them back.
+// Only those whose session has a desk: one whose parent isn't listed (closed, or a terminal id that
+// doesn't match) counts for nothing until it shows up or is dropped.
 export function subDesks(subs, list) {
-  return Object.entries(subs).map(([id, s]) => {
+  return Object.entries(subs).filter(([, s]) => list.some((a) => a.address === s.parent)).map(([id, s]) => {
     const parent = list.find((a) => a.address === s.parent);
     return { address: `${s.parent}~${id.slice(0, 8)}`, status: s.doneAt ? "done" : "working", parent: s.parent, sub: true,
       tab_name: parent?.tab_name ?? "sub", app: parent?.app ?? null, program: parent?.program ?? null, focused: false };

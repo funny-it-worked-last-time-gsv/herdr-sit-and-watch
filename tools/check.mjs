@@ -925,6 +925,23 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (o.m.canStage != null || ids(t).includes("pet-can-down")) fails.push("can: below level 2 there's no knock");
   noErr(t, "can");
 
+  // Value: protects=the developer-mode `canKnock` and `power` buttons doing what the real events do: canKnock knocks the can
+  //   now (no 10 minutes needed) for 20s, power fires POWER! at level 3; fails_when=fire("canKnock") stops setting the
+  //   20s window or the knock ignores it, or the power chip stops starting the powerUp one-shot; why_new=the golden only
+  //   records the one-shot lists the chips start, never the knock window or the pose; seam=none (o.fire is what the
+  //   chip's click calls); no_claim=the chip buttons' own click wiring (the dev strip block covers that)
+  const { o: k, cx: kcx } = mount();
+  render(k, ["working", "working", "idle"]);
+  k.fire("canKnock", kcx); t = render(k, ["working", "working", "idle"]);
+  if (leftOf(t, "pet-Simba-sit") !== 56) fails.push(`dev chips: canKnock should put Simba on the armrest at once, at ${leftOf(t, "pet-Simba-sit")}`);
+  S.advance(1000); S.advance(800); t = render(k, ["working", "working", "idle"]);
+  if (!ids(t).includes("pet-can-down")) fails.push("dev chips: canKnock should knock the can down");
+  S.advance(20000); t = render(k, ["working", "working", "idle"]);
+  if (leftOf(t, "pet-Simba-sit") === 56) fails.push("dev chips: canKnock's knock should end after 20s");
+  k.fire("power", kcx); t = render(k, ["working", "idle", "idle"]);
+  if (!(k.m.powerUp > 0) || !ids(t).some((x) => x.startsWith("pdev-head-3-power"))) fails.push(`dev chips: power should fire POWER! at level 3, got powerUp=${k.m.powerUp} ${ids(t).find((x) => x.startsWith("pdev-head-"))}`);
+  noErr(t, "dev chips");
+
   // Popcorn: an agent blocked spills it; Buddy eats it down over a minute.
   const { o: p } = mount();
   // Buddy's kernels sit left of the chair (x < 10), his spill under it; count them apart.
@@ -1087,6 +1104,155 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (JSON.stringify(sent) !== JSON.stringify(["do sitandwatch.sub-start-t8-a1b2c3", "do sitandwatch.sub-stop-t8-a1b2c3"]) || r.status !== 0)
     fails.push(`subs: the hook should send exactly the start and stop, quietly ignoring the rest, sent ${JSON.stringify(sent)} exit ${r.status}`);
   rmSync(dir, { recursive: true, force: true });
+}
+
+// ---- minimise: refusals on the way back, async and thrown refusals, a restart ------------
+{
+  // Value: protects=minimise undoing itself whenever Herdr refuses: a refused restore puts the strip back (still
+  //   minimised, saved, with a toast), a resize that rejects later or throws leaves it unminimised with a toast, a block
+  //   with no id says so without resizing, and the minimised state comes back after a restart (localStorage "min") only
+  //   while its block is still strip-sized (review fix: another layout or a full-size block forgets it);
+  //   fails_when=restore's onFail stops calling setMin(was) (full panel drawn in a 30px block), the promise rejection or
+  //   the catch stop undoing or toasting, or init stops reading "min"; why_new=the minimise block only refuses a shrink
+  //   with a synchronous { error }, never a restore, a rejected promise, a throw or a restart; seam=none (world.runResult
+  //   already exists); no_claim=whether Herdr's real layout.resize returns a promise
+  const blk = (extra = {}) => ({ id: "sitandwatch", type: "block", content: { mod: "sitandwatch" }, size: { px: 300 }, ...extra });
+  const tree = (kids) => ({ id: "root", type: "row", children: [{ id: "sidebar", type: "column", children: kids }] });
+  S.dropCommandWaiters();
+  const { o, cx } = mount();
+  world.layout = tree([blk()]);
+  render(o, ["working"]);
+  o.minimise(cx);
+  world.layout = tree([blk({ size: { px: 30 } })]);                 // Herdr shrank the block
+  const o2 = new Office(); o2.init(world.props, makeCx());           // a restart: the strip is remembered
+  if (o2.min?.id !== "sitandwatch" || o2.min?.axis !== "column") fails.push(`min: a restart should keep it minimised, got ${JSON.stringify(o2.min)}`);
+  // Review fix: a layout whose block is full size (another layout reusing the id, or Herdr put it back) forgets the strip.
+  world.layout = tree([blk()]);
+  const o3 = new Office(); o3.init(world.props, makeCx());
+  let kept3 = "x"; try { kept3 = localStorage.getItem("min"); } catch {}
+  if (o3.min || kept3 != null) fails.push(`min: a full-size block after a restart should forget the strip, got min=${JSON.stringify(o3.min)} saved=${kept3}`);
+  world.layout = tree([blk({ size: { px: 30 } })]); o.setMin({ id: "sitandwatch", axis: "column", saved: { px: 300 }, at: 0, seen: 30 });
+  const again = (result) => { world.notes = []; world.runResult = result; o.minBusy = false; o.minimise(cx); return world.notes.map((n) => n.body).join(" | "); };
+  const toast = again(() => ({ error: "busy" }));                       // restore refused: still a strip
+  let saved = null; try { saved = JSON.parse(localStorage.getItem("min")); } catch {}
+  if (o.min?.id !== "sitandwatch" || saved?.id !== "sitandwatch" || !toast.includes("Herdr refused to resize me: busy")) fails.push(`min: a refused restore should stay minimised (and saved) with a toast, min=${JSON.stringify(o.min)} toast="${toast}"`);
+  o.setMin(null);
+  again(() => Promise.reject(new Error("later"))); await S.settle();   // shrink refused later
+  const late = world.notes.map((n) => n.body).join(" | ");
+  if (o.min || !late.includes("Herdr refused to resize me: later")) fails.push(`min: a resize that rejects should undo and toast, min=${JSON.stringify(o.min)} toast="${late}"`);
+  const threw = again(() => { throw new Error("boom"); });
+  if (o.min || !threw.includes("Herdr refused to resize me: boom")) fails.push(`min: a resize that throws should undo and toast, min=${JSON.stringify(o.min)} toast="${threw}"`);
+  world.layout = tree([blk({ id: undefined })]); world.runs = [];
+  const noid = again(null);
+  if (o.min || world.runs.length || !noid.includes("Give my block an id")) fails.push(`min: a block with no id should toast and not resize, toast="${noid}"`);
+  world.runResult = null;
+}
+
+// ---- review fixes: held-full meter, orphan sub-agents, waiting before the first poll, restore with no size ----
+{
+  // Value: protects=a full meter held during a ship staying full with nothing working (POWER! after the ship, not lost),
+  //   sub-agents counting only once their session has a desk (no hour of phantom charge), waiting times surviving until
+  //   the first hc poll (background helpers aren't listed before it), and restoring a block that had no size to weight 1;
+  //   fails_when=powerStep drains a held meter, subDesks keeps orphans, trackWaiting drops unlisted entries before the
+  //   poll, or restore sends anything but {id, weight: 1}; why_new=the /ship review found each one untested; seam=none;
+  //   no_claim=Herdr's real timing of the first hc poll. Also the red team's two: a throwing command ending the loop,
+  //   and sub-agents counting toward "how many?!".
+  const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
+  if (JSON.stringify(R.powerStep(1200, 0, true)) !== '{"power":1200,"fire":false}') fails.push(`fixes: a held-full meter should stay full with nothing working, got ${JSON.stringify(R.powerStep(1200, 0, true))}`);
+  if (R.subDesks({ x: { parent: "gone", at: 0 } }, [{ address: "a0" }]).length) fails.push("fixes: a sub-agent whose session has no desk shouldn't count");
+  const kept = JSON.stringify(R.trackWaiting({ h1: 5 }, [], () => 9, true)), dropped = JSON.stringify(R.trackWaiting({ h1: 5 }, [], () => 9));
+  if (kept !== '{"h1":5}' || dropped !== "{}") fails.push(`fixes: before the first poll unlisted waiters stay, after it they go, got ${kept} ${dropped}`);
+
+  S.dropCommandWaiters();
+  const { o, cx } = mount();
+  render(o, ["idle"]);
+  o.subEvent({ verb: "start", parent: "gone", id: "orph1" }, cx);
+  const p0 = o.m.power; S.advance(1000);
+  if (o.m.power > p0) fails.push("fixes: an orphan sub-agent shouldn't charge the bar");
+  // A helper waiting since before a restart: kept until the first poll, which doesn't list it.
+  localStorage.setItem("waiting", JSON.stringify({ h9: clock.now - 5 * MIN }));
+  const o2 = new Office(); o2.init(world.props, makeCx());
+  world.agents = []; o2.render();
+  if (o2.waiting?.h9 == null) fails.push("fixes: a helper's waiting time should survive the first render after a restart");
+  world.hcLs = { terminals: [] }; S.advance(10000); await S.settle(); await S.settle(); o2.render();
+  if (o2.waiting?.h9 != null) fails.push("fixes: once the poll says it's gone, its waiting time should go");
+  // Restore a block that had no size: weight 1.
+  const { o: m, cx: mcx } = mount();
+  world.layout = { id: "root", type: "row", children: [{ id: "sidebar", type: "column", children: [{ id: "sitandwatch", type: "block", content: { mod: "sitandwatch" } }] }] };
+  render(m, ["idle"]); m.minimise(mcx); m.minBusy = false; world.runs = []; m.minimise(mcx);
+  const back = world.runs.find(([n]) => n === "layout.resize")?.[1];
+  if (JSON.stringify(back) !== '{"id":"sitandwatch","weight":1}' || m.min) fails.push(`fixes: restoring a block with no size should resize it to weight 1, got ${JSON.stringify(back)} min=${JSON.stringify(m.min)}`);
+  world.layout = null;
+
+  // Red team: a bad command (an inherited name like fire-toString) must not end the command loop, and sub-agents
+  // aren't more agents seen (ten of them mustn't make "how many?!" his mood for good).
+  await S.settle(); S.dropCommandWaiters();             // earlier mounts' loops start on the first await: drop them after
+  const { o: c } = mount();
+  render(c, ["working"]);
+  const send = async (cmd) => { S.sendCommand(cmd); await S.settle(); await S.settle(); };
+  try { c.fire("toString", makeCx()); } catch (e) { fails.push(`fixes: fire("toString") should be no event, it threw ${e?.message}`); }
+  world.overlays = null;                                   // makes openOverlay throw: a command that fails
+  await send("options"); world.overlays = []; await send("demo-2");
+  if (c.demoAt == null) fails.push("fixes: after a command that throws the loop should still take commands (demo-2 did nothing)");
+  c.demoAt = null;
+  for (let i = 0; i < 12; i++) { await send(`sub-start-a0-many${i}`); render(c, ["working"]); }
+  if (c.m.seen.size !== 1) fails.push(`fixes: sub-agents shouldn't count as agents seen, seen=${c.m.seen.size}`);
+}
+
+// ---- the power bar: a terminal both in agents() and in hc's list counts once ---------------
+{
+  // Value: protects=powerTick() and the panel list taking each address once when a terminal is both in agents() and in the
+  //   hc poll (helpers), plus a real background helper charging and getting its desk; fails_when=the seen-set dedupe goes
+  //   from powerTick (the bar charges twice per agent and POWER! fires early) or from render (a desk drawn twice), or
+  //   helpers stop counting; why_new=the power block's hcLs is always empty, so helpers never reach the meter; seam=none;
+  //   no_claim=Herdr's real overlap between agents() and hc ls
+  S.dropCommandWaiters();
+  const { o } = mount();
+  world.agents = agentsOf(["working", "idle"]);
+  world.hcLs = { terminals: [{ address: "a0", state: "live", status: "working", name: "t0" }, { address: "h1", state: "live", status: "working", name: "bg" }] };
+  await S.settle(); await S.settle(); await S.settle();
+  if (o.helpers.length !== 2) fails.push(`power: the poll should have read both hc terminals, got ${o.helpers.length}`);
+  const p0 = o.m.power; S.advance(1000);
+  if (o.m.power - p0 !== 2) fails.push(`power: a0 (in both lists) and helper h1 working should charge 2 a second, got ${o.m.power - p0}`);
+  const desks = ids(o.render()).filter((x) => /^pd-/.test(x)).sort().join(",");
+  if (desks !== "pd-a0,pd-a1,pd-h1") fails.push(`power: each terminal should get one desk, got ${desks}`);
+}
+
+// ---- sub-agents: a repeated start, the dev chip ----------------------------------------
+{
+  // Value: protects=subEvent() keeping a sub-agent's first start (a repeated start doesn't restart its hour or revive it),
+  //   a repeated stop keeping the first stop time, and the dev "subagent" chip putting a pretend one on the first desk that
+  //   stops after 15s and goes 8s later (nothing without a desk); fails_when=start overwrites (= instead of ??=), a stop
+  //   re-stamps doneAt, the chip's parent/timer breaks or it adds one with no desk to hang it on; why_new=the sub-agents
+  //   block never repeats a start or a stop and never fires the chip; seam=none; no_claim=whether Claude Code ever sends a
+  //   start twice
+  S.dropCommandWaiters();
+  const { o, cx } = mount();
+  render(o, ["idle", "idle"]);
+  o.subEvent({ verb: "start", parent: "a0", id: "r1" }, cx);
+  const at0 = o.subs.r1.at;
+  jump(50 * MIN); o.subEvent({ verb: "start", parent: "a0", id: "r1" }, cx);
+  if (o.subs.r1.at !== at0) fails.push("subs: a repeated start should keep the first start's time");
+  jump(11 * MIN); S.advance(1000);
+  if (o.subs.r1) fails.push("subs: a repeated start shouldn't restart the hour (dropped 1h after the first start)");
+  o.subEvent({ verb: "start", parent: "a0", id: "r2" }, cx); o.subEvent({ verb: "start", parent: "a0", id: "r3" }, cx);
+  o.subEvent({ verb: "stop", parent: "a0", id: "r2" }, cx);
+  const done0 = o.subs.r2.doneAt; jump(5000);
+  o.subEvent({ verb: "stop", parent: "a0", id: "r2" }, cx);
+  if (o.subs.r2.doneAt !== done0) fails.push("subs: a repeated stop should keep the first stop's time");
+  o.subs = {};
+
+  render(o, ["idle", "idle"]);
+  o.fire("subagent", cx);
+  const devs = Object.entries(o.subs);
+  if (devs.length !== 1 || devs[0][1].parent !== o.list[0].address || devs[0][1].doneAt) fails.push(`subs: the dev chip should start one sub-agent on the first desk, got ${JSON.stringify(o.subs)}`);
+  S.advance(15000);
+  if (!(devs[0]?.[1].doneAt > 0) || !o.subs[devs[0]?.[0]]) fails.push("subs: the dev sub-agent should stop after 15s and stay a moment");
+  S.advance(9000);
+  if (Object.keys(o.subs).length) fails.push("subs: the dev sub-agent should be gone 8s after it stops");
+  const { o: e, cx: ecx } = mount();
+  render(e, []); e.fire("subagent", ecx);
+  if (Object.keys(e.subs).length) fails.push("subs: the dev chip with no desks should do nothing");
 }
 
 const budget = g.budget.max + BUDGET_HEADROOM, over = snap.demo.counts.map((n, i) => [i + 1, n]).filter(([, n]) => n > budget);
