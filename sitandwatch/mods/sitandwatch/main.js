@@ -279,6 +279,10 @@ export default class Office extends View {
           if (c.startsWith("desks-")) { const v = c.slice(6); this.dev.desks = DESK_AGES[v] ? v : null; cx.notify(); }
           // ship, ship-merged, ship-deployed: the hook says what shipped, for the banner
           if (c === "ship" || c.startsWith("ship-")) this.boom(c.slice(5), cx);
+          // push (a branch, not main) and pr / pr-<number> (gh pr create): the hook's smaller events
+          if (c === "push") { startOneShot(this.m, "pushOff"); cx.notify(); }
+          const pr = /^pr(?:-(\d{1,6}))?$/.exec(c);
+          if (pr) { this.m.prNum = pr[1] ?? null; startOneShot(this.m, "prOpened"); cx.notify(); }
           // developer mode from the command line too: fire-<event>, mood-<name|auto>, level-<0..3|real>
           if (c.startsWith("fire-")) this.fire(c.slice(5), cx);
           if (c.startsWith("mood-")) { const v = c.slice(5); this.dev.mood = v === "auto" ? null : v; cx.notify(); }
@@ -503,6 +507,7 @@ export default class Office extends View {
     if (ev === "streak") m.streakAddr = first;
     if (ev === "welcome") m.welcomeAddr = first;
     if (ev === "yes?") m.aysAddr = first;
+    if (ev === "pr") m.prNum = "42";
     if (ev === "poke") m.pokeLine = pickLine("poke", Math.floor(Math.random() * POKES));
     if (ev === "chaos") setOption({ chaos: !options().chaos });
     if (ev === "pushed" || ev === "merged" || ev === "deployed") return this.boom(ev, cx);
@@ -565,7 +570,7 @@ export default class Office extends View {
       working: working.length, blocked: blocked.length, longestWorkingMs, longestBlockedMs, longestBlockedAddr,
       welcomeAddr: m.welcomeAddr, userIdleMs: now - m.lastUser, hour: new Date().getHours(), seen: m.seen.size,
       idleMs: working.length ? 0 : now - m.lastBusy, streakAddr: m.streakAddr, aysAddr: m.aysAddr,
-      seed: m.seed, chaos: options().chaos, pokeLine: m.pokeLine,
+      seed: m.seed, chaos: options().chaos, pokeLine: m.pokeLine, prNum: m.prNum ?? null,
       fx: Object.fromEntries(ONE_SHOTS.map((k) => [k, m[k]])),
     };
   }
