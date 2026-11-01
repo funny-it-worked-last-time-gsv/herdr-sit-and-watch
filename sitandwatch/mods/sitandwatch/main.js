@@ -7,7 +7,7 @@ import { LINES } from "./lines.js";
 import { panel } from "./panel.js";
 import { spaceLabel, tabLabel, tabName } from "./names.js";
 import { spaceName, tabText } from "./privacy.js";
-import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, shouldClearMin, MIN_GUARD_MS, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting } from "./rules.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, heightToApply, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -178,6 +178,7 @@ export default class Office extends View {
         if (partyOver) startOneShot(this.m, "linger", 1);   // a second of confetti still drifting down
         this.wanderTick(cx);
         if (this.powerTick(token)) changed = true;
+        this.heightTick(token);
         this.minBusy = false;
         if (this.minCheck()) changed = true;
         if (this.knockTick(cx)) changed = true;
@@ -222,6 +223,8 @@ export default class Office extends View {
           if (c === "options") openOptions();
           if (c === "wander") this.wanderTick(cx, true);
           if (c === "min") this.minimise(cx);
+          // height-<240|300|400|500|layout>: the panel's height, as the Options dialog sets it (remembered)
+          if (c.startsWith("height-")) { const v = c.slice(7); setOption({ height: v === "layout" ? null : Number(v) }); cx.notify(); }
           // sub-start-<terminal>-<id> / sub-stop-...: a Claude Code sub-agent (the subagents hook)
           const sub = parseSubCommand(c);
           if (sub) this.subEvent(sub, cx);
@@ -308,6 +311,18 @@ export default class Office extends View {
     const before = pileSize(m.spillTicks ?? 0);
     m.spillTicks = drawn.spilled ? (m.spillTicks ?? 0) + 1 : 0;
     return changed || pileSize(m.spillTicks) !== before;
+  }
+
+  // The height from Options: applied once a second by the copy that owns the commands, at startup too
+  // (a restart puts the block back to the layout's size), and again whenever it's changed.
+  heightTick(token) {
+    try { if (localStorage.getItem(OWNER) !== token) return; } catch { return; }
+    const h = options().height;
+    if (!h) { this.heightApplied = null; return; }
+    let b; try { b = findBlock(layout()); } catch { return; }
+    const px = heightToApply(h, this.heightApplied, b, !!this.min);
+    if (b?.ok && b.axis === "column" && !this.min) this.heightApplied = h;   // applied, or already that size
+    if (px) try { run("layout.resize", { id: b.id, px }); } catch {}
   }
 
   // A sub-agent started or stopped. A stop for one never seen is ignored; a start for one already

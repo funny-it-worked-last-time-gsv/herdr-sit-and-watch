@@ -322,7 +322,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   //   missing from a partial pets object reads as off, unknown pet names survive, the default floor stops being slate, or
   //   setOption() replaces the stored object instead of merging; why_new=the golden only ever stores { dev: true }, nothing
   //   reads options back; seam=none; no_claim=does not check names like "toString" as a floor (they pass today, see report)
-  const DEF = { floor: "slate", pets: { Buddy: true, Snowy: true, Simba: true }, speech: true, chaos: false, dev: false };
+  const DEF = { height: null, floor: "slate", pets: { Buddy: true, Snowy: true, Simba: true }, speech: true, chaos: false, dev: false };
   const cases = [
     [undefined, DEF], [null, DEF], ["garbage", DEF], [42, DEF], [{}, DEF],
     [{ floor: "lava" }, DEF], [{ floor: "teal" }, { ...DEF, floor: "teal" }],
@@ -331,6 +331,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     [{ speech: false }, { ...DEF, speech: false }], [{ speech: "no" }, DEF],
     [{ chaos: true }, { ...DEF, chaos: true }], [{ chaos: "true" }, DEF], [{ chaos: 1 }, DEF],
     [{ dev: true }, { ...DEF, dev: true }], [{ dev: 1 }, DEF], [{ dev: "yes" }, DEF],
+    [{ height: 400 }, { ...DEF, height: 400 }], [{ height: 401 }, DEF], [{ height: "400" }, DEF], [{ height: 0 }, DEF],
   ];
   for (const [raw, want] of cases) {
     const got = R.readOptions(raw);
@@ -541,7 +542,7 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (optsNow().chaos) fails.push("commands: a second \"chaos\" should turn it off");
   world.overlays = [];
   await send("options");
-  if (!same(world.overlays, [{ mod: "sitandwatch", kind: "dialog", width: 380, height: 470, props: { options: true } }])) fails.push(`commands: "options" should open the dialog, overlays ${JSON.stringify(world.overlays)}`);
+  if (!same(world.overlays, [{ mod: "sitandwatch", kind: "dialog", width: 380, height: 540, props: { options: true } }])) fails.push(`commands: "options" should open the dialog, overlays ${JSON.stringify(world.overlays)}`);
   render(o, LISTS.w1);
   await send("pets-ship");
   if (o.dev.pets !== "ship" || !ids(render(o, LISTS.w1)).includes("pet-awoo")) fails.push(`commands: "pets-ship" should force the ship scene, pets ${o.dev.pets}`);
@@ -576,8 +577,8 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (optsNow().pets.Simba !== false || !optsNow().pets.Buddy) fails.push(`dialog: Simba's pill should switch only Simba off, ${JSON.stringify(optsNow().pets)}`);
   press("opt-pet-Simba");
   if (optsNow().pets.Simba !== true) fails.push("dialog: Simba's pill again should switch Simba back on");
-  press("opt-speech-off"); press("opt-chaos-on"); press("opt-dev-on");
-  const want = { floor: "teal", pets: { Buddy: true, Snowy: true, Simba: true }, speech: false, chaos: true, dev: true };
+  press("opt-speech-off"); press("opt-chaos-on"); press("opt-dev-on"); press("opt-height-400");
+  const want = { height: 400, floor: "teal", pets: { Buddy: true, Snowy: true, Simba: true }, speech: false, chaos: true, dev: true };
   if (!same(optsNow(), want)) fails.push(`dialog: after the clicks options are ${JSON.stringify(optsNow())}`);
   press("opt-dev-off");
   if (optsNow().dev) fails.push("dialog: dev off should turn developer mode off");
@@ -1214,6 +1215,39 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   S.advance(10000); await S.settle(); await S.settle(); o4.render();
   if (o4.waiting?.h8 != null) fails.push("fixes: a failed first poll should still let unlisted waiters go");
   world.hcLs = { terminals: [] };
+}
+
+// ---- height: the Options setting and height-<px> ---------------------------------------------
+{
+  // Value: protects=the chosen height being applied to the panel's block (column only, not while minimised, once per choice,
+  //   again after a restart), `height-<px>` setting it and `height-layout` handing it back to the layout; fails_when=the tick
+  //   stops resizing, resizes every second, resizes a docked (row) block or a minimised one, or the command stops storing it;
+  //   why_new=new feature; seam=none (world.layout/world.runs exist); no_claim=Herdr keeping the px across its own restart
+  const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
+  const b = (px, axis = "column") => ({ ok: true, id: "sitandwatch", axis, size: px == null ? null : { px } });
+  const cases = [R.heightToApply(400, null, b(300), false), R.heightToApply(400, 400, b(300), false), R.heightToApply(400, null, b(400), false),
+    R.heightToApply(400, null, b(300, "row"), false), R.heightToApply(400, null, b(30), true), R.heightToApply(null, null, b(300), false), R.heightToApply(400, null, { ok: false }, false)];
+  if (JSON.stringify(cases) !== "[400,null,null,null,null,null,null]") fails.push(`height: heightToApply should resize only a new choice, in a column, not minimised, got ${JSON.stringify(cases)}`);
+  S.dropCommandWaiters();
+  const { o } = mount();
+  const lay = (px) => ({ id: "root", type: "row", children: [{ id: "sidebar", type: "column", children: [{ id: "sitandwatch", type: "block", content: { mod: "sitandwatch" }, size: { px } }] }] });
+  world.layout = lay(300); render(o, ["idle"]);
+  const send = async (c) => { S.sendCommand(c); await S.settle(); await S.settle(); };
+  world.runs = []; await send("height-400"); S.advance(1000);
+  const sized = () => world.runs.filter(([n]) => n === "layout.resize").map(([, a]) => a.px);
+  if (JSON.stringify(sized()) !== "[400]") fails.push(`height: height-400 should resize the block to 400 once, got ${JSON.stringify(sized())}`);
+  S.advance(3000);
+  if (sized().length !== 1) fails.push(`height: it shouldn't resize again every second, got ${JSON.stringify(sized())}`);
+  const o2 = new Office(); o2.init(world.props, makeCx()); world.runs = []; S.advance(1000);   // a restart: back to the layout's 300
+  if (JSON.stringify(sized()) !== "[400]") fails.push(`height: after a restart the chosen height should come back, got ${JSON.stringify(sized())}`);
+  world.runs = []; o2.min = { id: "sitandwatch", axis: "column" };
+  world.shared["sitandwatch.options"] = { ...world.shared["sitandwatch.options"], height: 500 }; S.advance(1000);
+  if (sized().length) fails.push("height: a minimised panel shouldn't be resized");
+  o2.min = null; S.advance(1000);
+  if (JSON.stringify(sized()) !== "[500]") fails.push(`height: once it's not minimised the new height should apply, got ${JSON.stringify(sized())}`);
+  world.runs = []; await send("height-layout"); await send("height-layout"); S.advance(1000);
+  if (R.readOptions(world.shared["sitandwatch.options"]).height !== null || sized().length) fails.push("height: height-layout should hand the size back to the layout without resizing");
+  world.layout = null;
 }
 
 // ---- the power bar: a terminal both in agents() and in hc's list counts once ---------------
