@@ -1,6 +1,6 @@
 # herdr-sit-and-watch
 
-![Sit & Watch: your agents work. You watch from the armchair.](sitandwatch/preview.png)
+![Sit & Watch: your agents work. You watch from the armchair.](sitandwatch/media/card.png)
 
 **Sit & Watch** is the Herdr sidebar where your agents are little robots at their desks and you are the
 unhinged developer in the red armchair, getting progressively more unwell as they cook.
