@@ -212,6 +212,9 @@ against screenshots of the live panel.
 - **Ship only on main; pushes and PRs get their own reactions** ([#12](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/12)). Pushing a branch to
   open a PR no longer says "IT'S LIVE": only a push to main ships. A branch push sends a paper plane,
   and opening a PR has him hold up a scorecard reading the PR's number.
+- **More commentary, a wider bubble, a new look** ([#13](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/13)). Every line pool grows (424 lines),
+  most at the low levels so he repeats himself less. His speech bubble wraps at 116px, not the
+  chair's 78. The README opens with a new card and pitch, and the preview carries the title.
 
 ## Credits
 
