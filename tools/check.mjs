@@ -32,7 +32,7 @@ const LINES_OF = (k) => LINES[k] ?? [];
 const { clock, world, makeCx, reseed, texts, ids, count, walk, sendCommand } = S;
 
 // Intended differences from the golden (new features), and the element budget headroom.
-const ALLOWED = { newChips: [], newOneShots: [], newDemoStates: 0 };   // since the golden's commit (a0c7ee5): none yet
+const ALLOWED = { newChips: [], newOneShots: [], newDemoStates: 0 };   // since the golden's commit (013b547): none yet
 const BUDGET_HEADROOM = 60;
 
 // ---- harness ----------------------------------------------------------------
@@ -1122,6 +1122,37 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   const sent = existsSync(out) ? rf(out, "utf8").trim().split("\n") : [];
   if (JSON.stringify(sent) !== JSON.stringify(["do sitandwatch.sub-start-t8-a1b2c3", "do sitandwatch.sub-stop-t8-a1b2c3"]) || r.status !== 0)
     fails.push(`subs: the hook should send exactly the start and stop, quietly ignoring the rest, sent ${JSON.stringify(sent)} exit ${r.status}`);
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// ---- the ship hook: what counts as shipping ---------------------------------------------------
+{
+  // Value: protects=the PostToolUse ship hook sending ship-merged/-deployed/-pushed for gh pr merge, vercel --prod and
+  //   git push, anywhere in a compound command, the biggest kind winning; a dry run (git push -n/--dry-run/-fn) not
+  //   counting, while a `grep -n` elsewhere in the command doesn't cancel a real push; fails_when=a ship is missed in a
+  //   compound command, a dry run explodes, or an unrelated -n hides a push; why_new=no check covered the hook, and the
+  //   old whole-command -n test missed real pushes; seam=none (a stand-in herdr-app on PATH); no_claim=Claude Code firing
+  //   PostToolUse in a real session
+  const { mkdtempSync, writeFileSync: wf, readFileSync: rf, chmodSync, existsSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { spawnSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "saw-ship-")), out = join(dir, "sent");
+  wf(join(dir, "herdr-app"), `#!/bin/sh\necho "$@" >> "${out}"\n`); chmodSync(join(dir, "herdr-app"), 0o755);
+  const hook = join(here, "..", "sitandwatch", "hooks", "sitandwatch-ship.py");
+  const cases = [
+    ["git push -u origin feature", "ship-pushed"],
+    ["gh pr view 7 && gh pr merge 7 --rebase --delete-branch | tail -1", "ship-merged"],
+    ["git status | grep -n x && git push", "ship-pushed"],
+    ["git push && vercel --prod", "ship-deployed"],
+    ["git push -n", null], ["git push --dry-run origin", null], ["git push -fn origin", null],
+    ["git log -n 3", null], ["echo git pushx", null], ["vercel", null],
+  ];
+  const got = cases.map(([command]) => {
+    rmSync(out, { force: true });
+    spawnSync("python3", [hook], { input: JSON.stringify({ hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command } }), env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } });
+    return existsSync(out) ? rf(out, "utf8").trim().replace(/^do sitandwatch\./, "") : null;
+  });
+  cases.forEach(([command, want], k) => { if (got[k] !== want) fails.push(`ship hook: "${command}" should send ${want}, got ${got[k]}`); });
   rmSync(dir, { recursive: true, force: true });
 }
 
