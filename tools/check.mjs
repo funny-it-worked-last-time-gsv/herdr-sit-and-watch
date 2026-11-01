@@ -1159,6 +1159,10 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
     // a PR whose body talks about merging and pushing: the body is quoted text, not commands
     ["gh pr create --base main --title t --body \"$(cat <<'EOF'\nOnly a push to main ships.\ngh pr merge 5 merges; git push origin main pushes.\n| a | vercel --prod |\nEOF\n)\"", onMain, "pr-12", { stdout: "https://github.com/o/r/pull/12\n" }],
     ['echo "gh pr merge 5"', onMain, null], ['echo "a; git push origin main"', onMain, null],
+    // here-documents are data: a commit message's apostrophes ("isn't") aren't quotes, and its lines aren't commands
+    ["git commit -F - <<'EOF'\nthis isn't a merge: gh pr merge 5\nEOF\ngit push -q origin feature 2>&1 | tail -1; true", onMain, "push"],
+    ["gh pr create --body \"$(cat <<'EOF'\nany push said \"IT'S LIVE\"\ngh pr merge at a line start\nEOF\n)\"", onMain, "pr"],
+    ["cat <<< 'x'\ngit push origin main", onFeature, "ship-pushed"],                 // <<< is a here-string, not a heredoc
     ["npx vercel --prod", onMain, "ship-deployed"],
     ["git push -u origin feature 2>&1 | tail -1; gh pr create --fill", onMain, "pr-11", { stdout: "https://github.com/o/r/pull/11\n" }],   // the PR beats its push
     ["git status | grep -n x && git push", onMain, "ship-pushed"],
