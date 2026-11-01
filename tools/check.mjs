@@ -303,6 +303,377 @@ const petIds = (tree, name) => ids(tree).filter((x) => x.startsWith(`pet-${name}
   if (went.size !== 3) fails.push(`wander: in 10 busy minutes only ${[...went]} went off`);
 }
 
+// The mod's own modules, imported at the same URLs main.js uses (so the same instances).
+const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
+const A = await import(pathToFileURL(join(MOD, "art.js")).href);
+const OPT = await import(pathToFileURL(join(MOD, "options.js")).href);
+const allPetIds = (tree) => ids(tree).filter((x) => x.startsWith("pet-") && !x.endsWith("-step"));
+const leftOf = (tree, id) => S.findId(tree, (x) => x === id)?.calls.find(([k]) => k === "left")?.[1][0] ?? null;
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+{ // options: whatever is stored comes back complete and valid
+  // Value: protects=readOptions() turning missing/broken stored options into the defaults, key by key, and setOption() merging;
+  //   fails_when=a broken value leaks through (unknown floor, pets not an object, truthy non-boolean speech/chaos/dev), a pet
+  //   missing from a partial pets object reads as off, unknown pet names survive, the default floor stops being slate, or
+  //   setOption() replaces the stored object instead of merging; why_new=the golden only ever stores { dev: true }, nothing
+  //   reads options back; seam=none; no_claim=does not check names like "toString" as a floor (they pass today, see report)
+  const DEF = { floor: "slate", pets: { Buddy: true, Snowy: true, Simba: true }, speech: true, chaos: false, dev: false };
+  const cases = [
+    [undefined, DEF], [null, DEF], ["garbage", DEF], [42, DEF], [{}, DEF],
+    [{ floor: "lava" }, DEF], [{ floor: "teal" }, { ...DEF, floor: "teal" }],
+    [{ pets: "no" }, DEF], [{ pets: null }, DEF], [{ pets: { Rex: false } }, DEF],
+    [{ pets: { Simba: false } }, { ...DEF, pets: { Buddy: true, Snowy: true, Simba: false } }],
+    [{ speech: false }, { ...DEF, speech: false }], [{ speech: "no" }, DEF],
+    [{ chaos: true }, { ...DEF, chaos: true }], [{ chaos: "true" }, DEF], [{ chaos: 1 }, DEF],
+    [{ dev: true }, { ...DEF, dev: true }], [{ dev: 1 }, DEF], [{ dev: "yes" }, DEF],
+  ];
+  for (const [raw, want] of cases) {
+    const got = R.readOptions(raw);
+    if (!same(got, want)) fails.push(`options: readOptions(${JSON.stringify(raw)}) gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+  }
+  mount();
+  world.shared[OPT.OPTIONS_KEY] = { floor: "teal", pets: { Buddy: false } };
+  OPT.setOption({ speech: false });
+  const stored = world.shared[OPT.OPTIONS_KEY];
+  if (!same(stored, { ...DEF, floor: "teal", pets: { Buddy: false, Snowy: true, Simba: true }, speech: false }))
+    fails.push(`options: setOption should merge into what's stored, stored ${JSON.stringify(stored)}`);
+}
+
+{ // pet reactions: who is there first, then the loudest thing wins; Snowy knocks when Simba is out
+  // Value: protects=petPoses() precedence ship > meltdown > spill > knock > ovation, the empty-chair curl, Simba out at night,
+  //   and the knocker rule (Snowy when Simba is out at night or switched off); fails_when=a branch is reordered (e.g. spill
+  //   checked before meltdown), the curl stops winning over a ship, Simba stays at night, the can goes to a missing Simba, or
+  //   ovation brings Simba back at night; why_new=pet poses are not in the golden (observe() reads only pdev ids) and the
+  //   wander checks only use sit; seam=none; no_claim=does not check how the poses are drawn
+  const P = (st) => R.petPoses(st);
+  const want = (name, got, exp) => { if (!same(got, exp)) fails.push(`pet poses ${name}: got ${JSON.stringify(got)}, want ${JSON.stringify(exp)}`); };
+  const sit = { buddy: "sit", snowy: "sit", simba: "sit" };
+  want("empty chair beats a ship", P({ present: false, ship: true, knock: true }), { buddy: "curl", snowy: "curl", simba: "curl" });
+  want("sitting", P({ present: true }), sit);
+  want("ship beats meltdown", P({ present: true, ship: true, mood: "allBlocked", spilled: true, knock: true, ovation: true }), { ...sit, buddy: "howl" });
+  want("meltdown beats spill", P({ present: true, mood: "allBlocked", spilled: true, knock: true }), { ...sit, buddy: "paw" });
+  want("spill beats knock", P({ present: true, spilled: true, knock: true, ovation: true }), { ...sit, buddy: "eat" });
+  want("knock beats ovation", P({ present: true, knock: true, ovation: true }), { ...sit, simba: "knock" });
+  want("ovation", P({ present: true, ovation: true }), { buddy: "sit", snowy: "back", simba: "back" });
+  want("night: Simba out", P({ present: true, night: true }), { ...sit, simba: "gone" });
+  want("night knock: Snowy", P({ present: true, night: true, knock: true }), { buddy: "sit", snowy: "knock", simba: "gone" });
+  want("night ovation: Simba stays out", P({ present: true, night: true, ovation: true }), { buddy: "sit", snowy: "back", simba: "gone" });
+  want("Simba off, knock: Snowy", P({ present: true, knock: true, hide: { Simba: true } }), { ...sit, snowy: "knock" });
+  want("Snowy off, knock: still Simba", P({ present: true, knock: true, hide: { Snowy: true } }), { ...sit, simba: "knock" });
+}
+
+{ // Options change the panel: floor colour, speech off, pets switched off, and a broken store falls back
+  // Value: protects=panel() reading the shared options on every render: the floor colour as the panel background, speech off
+  //   removing his bubble (he still reacts), a pet switched off drawing nothing (and a hidden Simba handing the knock to
+  //   Snowy on the armrest), and a broken stored object rendering the defaults without an ERR panel;
+  //   fails_when=the bg stays hard-coded, speech is ignored or also hides his pose, hide is applied before petPoses() loses
+  //   it or not at all, or a broken value reaches FLOORS[...] and throws; why_new=the golden renders with options unset or
+  //   { dev: true } only; seam=none; no_claim=does not click the dialog's pills (optionsDialog() is only checked to render)
+  const at = (stored, sts = LISTS.w1, pets = undefined) => {
+    const { o } = mount();
+    world.shared[OPT.OPTIONS_KEY] = stored;
+    if (pets) { world.shared[OPT.OPTIONS_KEY] = { ...stored, dev: true }; o.dev = { mood: null, level: null, pets }; }
+    const t = render(o, sts);
+    noErr(t, `options ${JSON.stringify(stored)}`);
+    return t;
+  };
+  const bg = (t) => S.findId(t, (x) => x === "saw-panel")?.calls.find(([k]) => k === "bg")?.[1][0];
+  if (bg(at(undefined)) !== "#6b7a8f") fails.push(`options: default floor should be slate #6b7a8f, was ${bg(at(undefined))}`);
+  for (const [k, f] of Object.entries(R.FLOORS)) if (bg(at({ floor: k })) !== f.color) fails.push(`options: floor ${k} should paint ${f.color}, was ${bg(at({ floor: k }))}`);
+  const broken = at({ floor: "lava", pets: "x", speech: "no", dev: "yes" });
+  if (bg(broken) !== "#6b7a8f") fails.push(`options: a broken store should fall back to slate, was ${bg(broken)}`);
+  for (const n of ["Buddy", "Snowy", "Simba"]) if (!allPetIds(broken).some((x) => x.startsWith(`pet-${n}-`))) fails.push(`options: a broken store hid ${n}`);
+  if (ids(broken).some((x) => x.startsWith("saw-devstrip"))) fails.push("options: dev: \"yes\" turned developer mode on");
+  const talk = at({}), quiet = at({ speech: false });
+  if (!ids(talk).some((x) => x.startsWith("pdev-say-"))) fails.push("options: speech on should show his bubble");
+  if (ids(quiet).some((x) => x.startsWith("pdev-say-"))) fails.push("options: speech off still shows his bubble");
+  if (observe(quiet).split(" | ").slice(0, 3).join() !== observe(talk).split(" | ").slice(0, 3).join()) fails.push("options: speech off changed his pose");
+  const none = at({ pets: { Buddy: false, Snowy: false, Simba: false } });
+  if (allPetIds(none).length) fails.push(`options: all pets off still drew ${allPetIds(none)}`);
+  const noSimba = at({ pets: { Simba: false } });
+  if (allPetIds(noSimba).some((x) => x.includes("Simba")) || !allPetIds(noSimba).includes("pet-Buddy-sit") || !allPetIds(noSimba).includes("pet-Snowy-sit"))
+    fails.push(`options: Simba off should leave Buddy and Snowy, saw ${allPetIds(noSimba)}`);
+  const knockNoSimba = at({ pets: { Simba: false } }, LISTS.w1, "knock");
+  if (leftOf(knockNoSimba, "pet-Snowy-sit") !== 56 || !ids(knockNoSimba).includes("pet-can-down"))
+    fails.push(`options: Simba off, Snowy should knock from the armrest (left 56) with the can down, saw left ${leftOf(knockNoSimba, "pet-Snowy-sit")}, ${allPetIds(knockNoSimba)}`);
+  const knockNone = at({ pets: { Buddy: false, Snowy: false, Simba: false } }, LISTS.w1, "knock");
+  if (allPetIds(knockNone).length) fails.push(`options: with every pet off a forced knock still drew ${allPetIds(knockNone)}`);
+  // The dialog itself renders from the same options (props.options opens it as an overlay).
+  mount();
+  world.props = { options: true }; world.shared[OPT.OPTIONS_KEY] = { floor: "navy", pets: { Snowy: false } };
+  const dlg = new Office(); dlg.init(world.props, { ...makeCx(), focus_handle: () => ({}) });
+  const d = dlg.render(), pillOn = (id) => S.findId(d, (x) => x === id)?.calls.find(([k]) => k === "bg")?.[1][0] === "#ffd86a";
+  if (!pillOn("opt-floor-navy") || pillOn("opt-floor-slate") || pillOn("opt-pet-Snowy") || !pillOn("opt-pet-Buddy") || !pillOn("opt-speech-on"))
+    fails.push("options: the dialog doesn't show the stored choices");
+  world.props = { role: "panel" };
+}
+
+{ // pets in the panel: developer mode's scenes, and the real states that set them off
+  // Value: protects=PET_SCENES forcing each scene through dev mode (and only while developer mode is on), plus panel()'s
+  //   wiring from his real state to petPoses() (empty chair, ship, meltdown, spill, standing ovation, Simba out at night);
+  //   fails_when=a scene is mis-keyed or the dev override is applied with dev mode off, or panel() feeds petPoses() the
+  //   wrong field (ovation from the wrong level, night not passed, spilled not taken from stance()); why_new=no check reads
+  //   pet ids outside wandering; seam=none; no_claim=does not drive the pets-<scene> command (nextCommand never resolves
+  //   offline) or check where each pose is placed
+  const scene = (pets, dev = true) => {
+    const { o } = mount();
+    render(o, LISTS.w1);
+    world.shared[OPT.OPTIONS_KEY] = { dev };
+    o.dev = { mood: null, level: null, pets };
+    const t = render(o, LISTS.w1);
+    noErr(t, `pets scene ${pets}`);
+    return allPetIds(t);
+  };
+  const has = (name, got, need, not = []) => {
+    const miss = need.filter((x) => !got.includes(x)), extra = got.filter((x) => not.some((n) => x.startsWith(n)));
+    if (miss.length || extra.length) fails.push(`pets ${name}: missing ${miss}, unexpected ${extra} (saw ${got})`);
+  };
+  const SC = {
+    asleep: [["pet-Buddy-curl", "pet-Snowy-curl", "pet-Simba-curl", "pet-Buddy-z", "pet-Snowy-z", "pet-Simba-z"], ["pet-Buddy-sit"]],
+    sit: [["pet-Buddy-sit", "pet-Snowy-sit", "pet-Simba-sit"], ["pet-can-down", "pet-awoo"]],
+    ovation: [["pet-Buddy-sit", "pet-Snowy-back", "pet-Simba-back"], []],
+    meltdown: [["pet-Buddy-paw", "pet-Snowy-sit", "pet-Simba-sit"], []],
+    ship: [["pet-Buddy-howl", "pet-awoo"], []],
+    spill: [["pet-Buddy-eat", "pet-Snowy-sit", "pet-Simba-sit"], []],
+    knock: [["pet-Buddy-sit", "pet-Snowy-sit", "pet-Simba-sit", "pet-can-down"], []],
+    night: [["pet-Buddy-sit", "pet-Snowy-sit"], ["pet-Simba-"]],
+  };
+  if (!same(Object.keys(SC).sort(), Object.keys(R.PET_SCENES).sort())) fails.push(`pets: scenes are ${Object.keys(R.PET_SCENES)}, this check knows ${Object.keys(SC)}`);
+  for (const [k, [need, not]] of Object.entries(SC)) has(`scene ${k}`, scene(k), need, not);
+  has("scene ship with dev mode off", scene("ship", false), ["pet-Buddy-sit"], ["pet-awoo", "pet-Buddy-howl"]);
+  // The real states.
+  const real = (name, sts, hour, need, not, before) => {
+    const { o, cx } = mount(hour);
+    render(o, sts);
+    before?.(o, cx);
+    const t = render(o, sts);
+    noErr(t, `pets ${name}`);
+    has(`real ${name}`, allPetIds(t), need, not);
+  };
+  real("nothing running", LISTS.idle3, 12, ["pet-Buddy-curl", "pet-Snowy-curl", "pet-Simba-curl"], ["pet-Buddy-sit"]);
+  real("one working", LISTS.w1, 12, ["pet-Buddy-sit", "pet-Snowy-sit", "pet-Simba-sit"], ["pet-Buddy-curl"]);
+  real("ship", LISTS.w1, 12, ["pet-Buddy-howl", "pet-awoo"], [], (o, cx) => o.boom("merged", cx));
+  real("all blocked", LISTS.b2, 12, ["pet-Buddy-paw"], ["pet-Buddy-eat"]);
+  real("one blocked", LISTS.w1b1, 12, ["pet-Buddy-eat"], ["pet-Buddy-sit"]);
+  real("level 3", LISTS.w4i1, 12, ["pet-Buddy-sit", "pet-Snowy-back", "pet-Simba-back"], []);
+  real("late night", LISTS.w1, 23, ["pet-Buddy-sit", "pet-Snowy-sit"], ["pet-Simba-"]);
+}
+
+{ // the pet painter: blocks() packs a pose into overlapping rectangles that paint exactly the sprite
+  // Value: protects=pack()'s layered rectangles (a colour may run under pixels a later colour paints), the shared-colour
+  //   merge, flip for facing left, outlined()'s 1px "X" edge, and the cache; fails_when=a rectangle overpaints a pixel no
+  //   later colour fixes, misses a pixel, paints a see-through pixel, the paint order changes, flip/outline shift the
+  //   shape, or the cache hands one drawing another's rectangles; why_new=nothing compares painted pixels with the art
+  //   (the budget only counts elements); seam=none (the poses are read from art.js's source text, the painter is called
+  //   through the exported pet()); no_claim=says nothing about how many rectangles are used
+  const src = readFileSync(join(MOD, "art.js"), "utf8");
+  const POSE = new Function(`return ${src.slice(src.indexOf("const POSE = ") + 13, src.indexOf("\n};\n", src.indexOf("const POSE = ")) + 2)};`)();
+  const flip = (rows) => rows.map((row) => [...row].reverse().join(""));
+  const grow = (rows) => {                       // the 8-neighbour 1px edge, worked out independently
+    const W = Math.max(...rows.map((r) => r.length)) + 2, H = rows.length + 2;
+    const at = (x, y) => rows[y - 1]?.[x - 1] ?? ".";
+    return Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => {
+      if (at(x, y) !== ".") return at(x, y);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (at(x + dx, y + dy) !== ".") return "X";
+      return ".";
+    }).join(""));
+  };
+  let n = 0;
+  for (const p of A.PETS) {
+    const pal = p.kind === "cat" ? { O: p.coat.O, o: p.coat.o, i: p.coat.i, W: "#ffffff", K: "#2a2320", N: "#e07a8a" } : { ...p.coat };
+    pal.X = "#1c1a24";
+    for (const [pose, rows0] of Object.entries(POSE[p.kind] ?? {})) for (const left of [false, true]) for (const edge of [false, true]) for (const s of [1, 3]) {
+      let rows = edge ? grow(rows0) : rows0;
+      if (left) rows = flip(rows);
+      const W = Math.max(...rows.map((r) => r.length)) * s, H = rows.length * s;
+      const want = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => pal[rows[Math.floor(y / s)][Math.floor(x / s)]] ?? null));
+      const got = Array.from({ length: H }, () => Array(W).fill(null));
+      const el = A.pet(p, pose, s, left, edge);
+      const arg = (e, k) => e.calls.find(([c]) => c === k)?.[1][0];
+      if (arg(el, "w") !== W || arg(el, "h") !== H) { fails.push(`painter ${p.name} ${pose}: box ${arg(el, "w")}x${arg(el, "h")}, want ${W}x${H}`); continue; }
+      let outside = false;
+      for (const k of el.kids) {
+        const [x, y, w, h, c] = ["left", "top", "w", "h", "bg"].map((m) => arg(k, m));
+        for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) if (got[yy]?.[xx] !== undefined) got[yy][xx] = c; else outside = true;
+      }
+      const bad = [];
+      for (let y = 0; y < H && bad.length < 3; y++) for (let x = 0; x < W && bad.length < 3; x++) if (got[y][x] !== want[y][x]) bad.push(`(${x},${y}) ${got[y][x]} not ${want[y][x]}`);
+      if (outside || bad.length) fails.push(`painter ${p.name} ${pose} s${s}${left ? " left" : ""}${edge ? " outlined" : ""}: ${outside ? "paints outside its box; " : ""}${bad.join(", ")}`);
+      n++;
+    }
+  }
+  if (n < 60) fails.push(`painter: only ${n} drawings checked; POSE didn't parse out of art.js`);
+}
+
+const click = (tree, id, cx, ev = "on_click") => { const e = S.findId(tree, (x) => x === id); if (!e?.handlers[ev]) return false; e.handlers[ev](ev === "on_key_down" ? { key: "escape" } : null, cx); return true; };
+const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
+
+{ // commands: `herdr-app do sitandwatch.<c>` reaches the newest panel's loop and does what it says
+  // Value: protects=the command loop's new branches (dev and chaos toggling the shared options, options opening the dialog,
+  //   wander sending every pet off, pets-<scene|auto> pinning and unpinning a scene) and the hand-off: an older panel's loop
+  //   passes a command on and stops instead of acting; fails_when=a branch is dropped or mis-sliced (e.g. "pets-" sliced at
+  //   the wrong index), dev/chaos write localStorage or this.m instead of the shared options, dev stops clearing the pins, or
+  //   an older loop that no longer owns the commands acts on one; why_new=offline nextCommand never resolved before, so no
+  //   command ever ran; seam=none (test-only queue in tools/stubs.mjs); no_claim=does not check Herdr re-dispatching the
+  //   hand-off's run() back to the owner, or the fire-/mood-/level-/ship commands (unchanged on this branch)
+  await S.settle();
+  S.dropCommandWaiters();
+  const { o: old } = mount();                          // an older panel: its loop waits first
+  S.reseed(7);                                         // (mount() reseeds: a second mount would draw the same token)
+  const cx = makeCx(), o = new Office();               // the newest panel owns the commands
+  o.init(world.props, cx);
+  await S.settle();
+  const send = async (c) => { S.sendCommand(c); await S.settle(); };
+  render(old, LISTS.w1); render(o, LISTS.w1);
+  await send("dev");                                   // reaches the old loop first: it hands it on and stops
+  if (!same(world.runs.at(-1), ["sitandwatch.dev", undefined]) || optsNow().dev) fails.push(`commands: an older loop should pass "dev" on untouched, runs ${JSON.stringify(world.runs)}, dev ${optsNow().dev}`);
+  o.dev.mood = "glazed";
+  await send("dev");
+  if (!optsNow().dev || o.dev.mood !== null || !ids(render(o, LISTS.w1)).includes("saw-devstrip")) fails.push(`commands: "dev" should turn developer mode on and clear the pins, dev ${optsNow().dev}, mood ${o.dev.mood}`);
+  await send("chaos");
+  if (!optsNow().chaos || !ids(render(o, LISTS.w4i1)).some((x) => x.startsWith("pdev-conf-chaos-"))) fails.push(`commands: "chaos" should turn chaos on for the render, chaos ${optsNow().chaos}`);
+  await send("chaos");
+  if (optsNow().chaos) fails.push("commands: a second \"chaos\" should turn it off");
+  world.overlays = [];
+  await send("options");
+  if (!same(world.overlays, [{ mod: "sitandwatch", kind: "dialog", width: 380, height: 470, props: { options: true } }])) fails.push(`commands: "options" should open the dialog, overlays ${JSON.stringify(world.overlays)}`);
+  render(o, LISTS.w1);
+  await send("pets-ship");
+  if (o.dev.pets !== "ship" || !ids(render(o, LISTS.w1)).includes("pet-awoo")) fails.push(`commands: "pets-ship" should force the ship scene, pets ${o.dev.pets}`);
+  await send("pets-auto");
+  if (o.dev.pets !== null || ids(render(o, LISTS.w1)).includes("pet-awoo")) fails.push(`commands: "pets-auto" should unpin the scene, pets ${o.dev.pets}`);
+  await send("dev");
+  if (optsNow().dev) fails.push("commands: a second \"dev\" should turn developer mode off");
+  render(o, LISTS.w1);
+  await send("wander");
+  const phases = Object.fromEntries(Object.entries(o.walk ?? {}).map(([k, w]) => [k, w.phase]));
+  if (!same(phases, { Buddy: "out0", Snowy: "out0", Simba: "out0" })) fails.push(`commands: "wander" should send every pet off, ${JSON.stringify(phases)}`);
+  void cx;
+  S.dropCommandWaiters();
+}
+
+{ // the Options dialog and the OPTS button: clicks change the shared options; Done and Esc close it
+  // Value: protects=each pill's click writing its choice (floor, a pet on/off and back, speech, chaos, dev), the panel
+  //   following at once, Done and Esc closing this overlay, and the header's OPTS opening the dialog without the click
+  //   reaching the header (which would start the demo); fails_when=a pill writes the wrong key or value, a pet pill sets
+  //   instead of toggling, Done/Esc close nothing or the wrong overlay, or OPTS stops stopping propagation; why_new=pass 1
+  //   only checked the dialog renders the stored choices; seam=none (handlers recorded by the stubs); no_claim=does not
+  //   check gpui actually stops the event, only that the handler asks it to
+  mount();
+  world.props = { options: true, overlay: "ov1" }; world.overlays = [{ mod: "sitandwatch", kind: "dialog", props: { options: true } }];
+  world.shared[OPT.OPTIONS_KEY] = undefined;
+  const cx = makeCx(); cx.focus_handle = () => ({});
+  const dlg = new Office(); dlg.init(world.props, cx);
+  const press = (id) => { if (!click(dlg.render(), id, cx)) fails.push(`dialog: no ${id} to click`); };
+  press("opt-floor-teal");
+  if (optsNow().floor !== "teal") fails.push(`dialog: Deep teal should be stored, floor ${optsNow().floor}`);
+  press("opt-pet-Simba");
+  if (optsNow().pets.Simba !== false || !optsNow().pets.Buddy) fails.push(`dialog: Simba's pill should switch only Simba off, ${JSON.stringify(optsNow().pets)}`);
+  press("opt-pet-Simba");
+  if (optsNow().pets.Simba !== true) fails.push("dialog: Simba's pill again should switch Simba back on");
+  press("opt-speech-off"); press("opt-chaos-on"); press("opt-dev-on");
+  const want = { floor: "teal", pets: { Buddy: true, Snowy: true, Simba: true }, speech: false, chaos: true, dev: true };
+  if (!same(optsNow(), want)) fails.push(`dialog: after the clicks options are ${JSON.stringify(optsNow())}`);
+  press("opt-dev-off");
+  if (optsNow().dev) fails.push("dialog: dev off should turn developer mode off");
+  press("opt-done");
+  if (world.overlays.length) fails.push(`dialog: Done should close it, overlays ${JSON.stringify(world.overlays)}`);
+  world.overlays = [{ mod: "sitandwatch" }, { mod: "other" }]; world.props = { options: true, overlay: "ov1" };
+  cx.stopped = false;
+  if (!click(dlg.render(), "saw-options", cx, "on_key_down") || !same(world.overlays, [{ mod: "other" }]) || !cx.stopped) fails.push(`dialog: Esc should close just this overlay, overlays ${JSON.stringify(world.overlays)}`);
+  // The panel follows, and its OPTS button opens the dialog without starting the demo.
+  world.props = { role: "panel" };
+  const { o, cx: pcx } = mount();
+  world.shared[OPT.OPTIONS_KEY] = { floor: "teal" };
+  const t = render(o, LISTS.w1);
+  if (S.findId(t, (x) => x === "saw-panel")?.calls.find(([k]) => k === "bg")?.[1][0] !== R.FLOORS.teal.color) fails.push("dialog: the panel didn't follow the floor choice");
+  world.overlays = []; pcx.stopped = false;
+  click(t, "saw-opts", pcx);
+  if (world.overlays[0]?.props?.options !== true || !pcx.stopped || o.demoAt != null) fails.push(`dialog: OPTS should open the dialog and stop the click, overlays ${JSON.stringify(world.overlays)}, stopped ${pcx.stopped}`);
+  pcx.stopped = false; click(t, "saw-opts", pcx, "on_mouse_down");
+  if (!pcx.stopped) fails.push("dialog: OPTS mouse-down should stop propagation too");
+}
+
+{ // developer mode's pets row: a chip per scene plus auto and wander, and each does what it says
+  // Value: protects=the pets row (one chip per PET_SCENES key, auto, wander), a scene chip pinning that scene and lighting
+  //   up, auto unpinning, and wander sending every pet off; fails_when=a chip is missing or mis-keyed, onPets is not wired
+  //   to dev.pets, the chosen chip doesn't light, or wander isn't forced; why_new=no check clicked the dev strip's pet row;
+  //   seam=none; no_claim=does not check the level/mood/fire rows (unchanged on this branch)
+  const { o, cx } = mount();
+  world.shared[OPT.OPTIONS_KEY] = { dev: true };
+  o.dev.open = true;                                   // the button rows show once "buttons" is pressed
+  let t = render(o, LISTS.w1);
+  const chips = ids(t).filter((x) => x.startsWith("dev-pt-")).map((x) => x.slice(7));
+  if (!same(chips, ["auto", ...Object.keys(R.PET_SCENES), "wander"])) fails.push(`dev pets row: chips ${chips}`);
+  const lit = (tree, k) => S.findId(tree, (x) => x === `dev-pt-${k}`)?.calls.find(([c]) => c === "bg")?.[1][0] === "#ffd86a";
+  if (!lit(t, "auto")) fails.push("dev pets row: auto should be lit with nothing pinned");
+  click(t, "dev-pt-spill", cx);
+  t = render(o, LISTS.w1);
+  if (o.dev.pets !== "spill" || !lit(t, "spill") || lit(t, "auto") || !allPetIds(t).includes("pet-Buddy-eat")) fails.push(`dev pets row: spill should pin the spill scene, pets ${o.dev.pets}, saw ${allPetIds(t)}`);
+  click(t, "dev-pt-auto", cx);
+  t = render(o, LISTS.w1);
+  if (o.dev.pets !== null || !lit(t, "auto") || allPetIds(t).includes("pet-Buddy-eat")) fails.push(`dev pets row: auto should unpin, pets ${o.dev.pets}`);
+  click(t, "dev-pt-wander", cx);
+  const phases = Object.values(o.walk ?? {}).map((w) => w.phase);
+  if (!same(phases, ["out0", "out0", "out0"])) fails.push(`dev pets row: wander should send all three off, phases ${phases}`);
+}
+
+{ // the can: when a cat knocks it, it leaves his armrest and lands on the floor
+  // Value: protects=panel() passing canDown to spectator() from the knocker's pose, so the armrest can (drawn from level 2)
+  //   and the knocked can are never both drawn; fails_when=canDown is not passed or read, is computed from Simba only (so a
+  //   Snowy knock with Simba off leaves the can up), or the can is dropped when no pet is there to knock it;
+  //   why_new=no check looked at the armrest can; seam=none; no_claim=the real knock never happens yet (panel() passes
+  //   knock: false), so only the dev knock scene reaches this
+  const armCans = (tree) => { let n = 0; walk(tree, (e) => { const bg = e.calls?.find(([k]) => k === "bg")?.[1][0], w = e.calls?.find(([k]) => k === "w")?.[1][0]; if (bg === "#c0c6cf" && w === 9) n++; }); return n; };
+  const at = (sts, pets, petsOn) => {
+    const { o } = mount();
+    world.shared[OPT.OPTIONS_KEY] = { dev: true, ...(petsOn ? { pets: petsOn } : {}) };
+    o.dev = { mood: null, level: null, pets };
+    const t = render(o, sts);
+    noErr(t, `can ${pets}`);
+    return { arm: armCans(t), down: ids(t).includes("pet-can-down") };
+  };
+  const want = (name, got, arm, down) => { if (got.arm !== arm || got.down !== down) fails.push(`can ${name}: armrest ${got.arm}, on the floor ${got.down}; want ${arm}, ${down}`); };
+  want("level 2, sitting", at(LISTS.w2i1, "sit"), 1, false);
+  want("level 2, Simba knocks", at(LISTS.w2i1, "knock"), 0, true);
+  want("level 2, Simba off: Snowy knocks", at(LISTS.w2i1, "knock", { Simba: false }), 0, true);
+  want("level 2, no cats: nobody knocks", at(LISTS.w2i1, "knock", { Snowy: false, Simba: false }), 1, false);
+  want("level 1: no can to knock", at(LISTS.w1, "sit"), 0, false);
+}
+
+{ // chaos reaches the render, and pets stay home in the demo and go home when work stops
+  // Value: protects=the chaos option feeding trackMetrics (lingering chaos confetti at level 3 with fewer than 6 working),
+  //   wanderTick doing nothing while the demo runs, and a trip cut short (key cleared) when nothing is busy any more, so
+  //   its pending steps can't carry it on; fails_when=chaos is read from this.m/localStorage again, the demo stops pausing
+  //   wandering, or the reset leaves the trip's key so a pending "away" step still fires; why_new=the golden never sets
+  //   chaos, and the wander checks never stop work mid-trip or run the demo; seam=none; no_claim=does not check chaos's
+  //   faster speech period
+  for (const chaos of [false, true]) {
+    const { o } = mount();
+    world.shared[OPT.OPTIONS_KEY] = { chaos };
+    const t = render(o, LISTS.w4i1);
+    if (ids(t).some((x) => x.startsWith("pdev-conf-chaos-")) !== chaos) fails.push(`chaos: option ${chaos} but chaos confetti ${!chaos}`);
+  }
+  let { o, cx } = mount();
+  render(o, LISTS.w1);
+  o.toggleDemo();
+  let moved = false;
+  for (let i = 0; i < 600; i++) { S.advance(1000); if (Object.values(o.walk ?? {}).some((w) => w.phase !== "home")) moved = true; }
+  if (moved) fails.push("wander: a pet wandered during the demo");
+  ({ o, cx } = mount());
+  render(o, LISTS.w1);
+  o.wanderTick(cx, true);
+  S.advance(60);
+  render(o, LISTS.idle3);
+  o.wanderTick(cx);
+  const cut = Object.values(o.walk).map((w) => w.phase + "/" + w.key);
+  S.advance(5000);
+  const after = Object.values(o.walk).map((w) => w.phase);
+  const t = render(o, LISTS.idle3);
+  if (!same(cut, ["home/null", "home/null", "home/null"]) || !same(after, ["home", "home", "home"]) || !allPetIds(t).includes("pet-Buddy-curl"))
+    fails.push(`wander: stopping work mid-trip should send them home for good, at once ${cut}, later ${after}, saw ${allPetIds(t)}`);
+}
+
 const budget = g.budget.max + BUDGET_HEADROOM, over = snap.demo.counts.map((n, i) => [i + 1, n]).filter(([, n]) => n > budget);
 for (const [i, n] of over) fails.push(`demo state ${i}: ${n} elements, budget ${budget}`);
 
