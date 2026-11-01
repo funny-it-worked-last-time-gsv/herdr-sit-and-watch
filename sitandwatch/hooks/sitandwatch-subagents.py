@@ -6,6 +6,8 @@ anything.
 
 Sends `herdr-app do sitandwatch.sub-start-<terminal>-<agent id>` (or sub-stop-...), where <terminal> is
 the Herdr terminal this session runs in (HC_TERMINAL_ID) and the agent id pairs the start with its stop."""
+from __future__ import annotations  # `str | None` annotations on Python 3.9
+
 import json
 import os
 import re

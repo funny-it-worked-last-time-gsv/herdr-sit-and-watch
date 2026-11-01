@@ -6,6 +6,8 @@ Never blocks or fails anything.
 Sends `herdr-app do sitandwatch.act-<terminal>-<text>`, where <terminal> is the Herdr terminal this
 session runs in (HC_TERMINAL_ID) and <text> is the phrase in base64url (letters, digits, - and _ only,
 so file names and spaces can't break the command). The phrase is printable ASCII, at most 40 characters."""
+from __future__ import annotations  # `str | None` annotations on Python 3.9
+
 import base64
 import json
 import os

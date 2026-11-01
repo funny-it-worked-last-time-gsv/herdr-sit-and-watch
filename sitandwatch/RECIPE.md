@@ -424,6 +424,10 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 
 ## Ship hook
 
+All three hooks run on Python 3.7 or later: each starts with `from __future__ import annotations`, so
+its `str | None` return types aren't evaluated (they'd need 3.10, and a pyenv or system `python3` is
+often older).
+
 `hooks/sitandwatch-ship.py` is a Claude Code `PostToolUse` hook. Copy it to `~/.claude/hooks/` and
 add to `~/.claude/settings.json`:
 
