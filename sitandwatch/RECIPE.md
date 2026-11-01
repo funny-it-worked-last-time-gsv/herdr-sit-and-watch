@@ -305,10 +305,11 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   swallowed. Herdr's `herdr-app ls` lists `sub_agents` per terminal, but mods can't read it.
 - `parseSubCommand()` reads them; `this.subs = { id: { parent, at, doneAt } }` (a stop for an unknown
   id is ignored). `pruneSubs()` treats a parent's sub-agents as one batch: kept while any runs, all
-  dropped 8s (`SUB_DONE_MS`) after the last stops; one never stopped (Esc, a killed session) goes after 15
-  minutes (`SUB_TTL_MS`). Kept in localStorage (`subs`) across reloads, so a stop for one running before
-  still lands. A stop for an id never seen leaves a hidden tombstone for 8s, so a start handed on late
-  between panel copies makes no ghost.
+  dropped 8s (`SUB_DONE_MS`) after the last stops; one never stopped (Esc, a killed session) goes after an
+  hour (`SUB_TTL_MS`; real ones run well past 15 minutes). Kept in localStorage (`subs`, written only by
+  the copy that owns the commands) across reloads, so a stop for one running before still lands. A stop
+  for an id never seen leaves a hidden tombstone for 30s (`SUB_TOMB_MS`, outside any batch), so a start
+  handed on late between panel copies makes no ghost.
 - `subDesks()` turns them into agents (`<parent>~<id>`, working or done) for everything that reads
   agents: the metrics (welcome, finish, level), the power bar. Then `foldSubs()` takes them off the
   desks and gives the parent's desk `subs: { done, total, running }`, drawn as `psub-<address>`: a
@@ -343,7 +344,8 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   and the block's size before). A new choice resizes once (`layout.resize { id, px }`; a layout `min`
   above the strip is fine up to the height chosen). The same choice leaves a drag of the sidebar line
   alone, except on a copy's first tick with the block back at `from` (Herdr restarted): set again.
-  `layout` resizes back to `from` (or weight 1). Never while minimised. A docked (row), missing,
+  `layout` resizes back to `from` (or weight 1). Never while minimised, nor in the 3s after a restore
+  (`restoredAt`: Herdr may still read the block small); a late refusal only counts if no resize came after. A docked (row), missing,
   ambiguous or too-small block says why once (`HEIGHT_TROUBLE`); a refused resize says so once and
   is retried 30s later. `height-<240|300|400|500|layout>` sets the option; anything else is ignored.
   For a drag handle, the layout's `sidebar` column needs `"resizable": true`.

@@ -214,12 +214,12 @@ export const shouldClearMin = (sizePx, minAt, now) => now - minAt > MIN_GUARD_MS
 // - The same choice: nothing, so a drag of the sidebar line stands; except on a first tick with the block
 //   back at its size from before (Herdr restarted and the layout put it back): set it again.
 const sameSize = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-export function planHeight({ height, saved, b, minimised, first }) {
+// settling: just restored from the strip, and Herdr may still read the block small: wait (so a strip is
+// never taken as "the size before").
+export function planHeight({ height, saved, b, minimised, first, settling = false }) {
   const keep = { resize: null, saved: saved ?? null, warn: null };
-  if (minimised) return keep;
+  if (minimised || settling) return keep;
   const found = !!b && (b.ok || b.reason === "min");
-  // just restored from a strip, and the layout still reads it small: wait (never take a strip as "the size before")
-  if (found && Number.isFinite(b.size?.px) && b.size.px < MIN_OPEN) return keep;
   if (!height) {
     if (saved && found && b.id === saved.id && !sameSize(b.size, saved.from)) return { resize: saved.from ?? { weight: 1 }, saved: null, warn: null };
     return { resize: null, saved: null, warn: null };
@@ -242,7 +242,6 @@ export function planHeight({ height, saved, b, minimised, first }) {
 export function keepMin(min, b, now = Infinity) {
   if (!min || !b?.ok || now - (min.at ?? 0) <= MIN_GUARD_MS) return min ?? null;
   if (b.id !== min.id || b.axis !== min.axis) return null;
-  if (Number.isFinite(min.seen) && b.size?.px === min.seen) return min;   // what the layout read just after the shrink
   return Number.isFinite(b.size?.px) && b.size.px >= MIN_OPEN ? null : min;
 }
 // The toasts for each reason minimising can't happen.
@@ -298,8 +297,9 @@ export function sinceLabel(ms) {
 // sub-agent's id. subs: { [id]: { parent, at, doneAt } }. Each gets a desk after its parent's, working
 // until it stops, done for a few seconds after (the finish), then gone; one never stopped goes after an hour.
 // SUB_TTL_MS: a sub-agent whose stop never comes (Esc, a killed session, a hook that timed out) is
-// forgotten after this, so it doesn't count as working for long.
-export const SUB_DONE_MS = 8000, SUB_TTL_MS = 15 * MIN;
+// forgotten after this (real ones can run well past 15 minutes, so it stays long). SUB_TOMB_MS: how long
+// a stop seen before its start is remembered, so the late start is ignored.
+export const SUB_DONE_MS = 8000, SUB_TTL_MS = 60 * MIN, SUB_TOMB_MS = 30000;
 export function parseSubCommand(c) {
   const m = /^sub-(start|stop)-([A-Za-z0-9]+)-([A-Za-z0-9]+)$/.exec(c ?? "");
   return m ? { verb: m[1], parent: m[2], id: m[3] } : null;
@@ -310,11 +310,13 @@ export function parseSubCommand(c) {
 export function pruneSubs(subs, now) {
   const live = (s) => !s.doneAt && now - s.at < SUB_TTL_MS, batch = {};
   for (const s of Object.values(subs)) {
+    if (s.tomb) continue;                                   // tombstones are no part of a batch
     const b = (batch[s.parent] ??= { running: false, last: 0 });
     if (live(s)) b.running = true;
     if (s.doneAt) b.last = Math.max(b.last, s.doneAt);
   }
-  return Object.fromEntries(Object.entries(subs).filter(([, s]) => (s.doneAt ? batch[s.parent].running || now - batch[s.parent].last < SUB_DONE_MS : live(s))));
+  return Object.fromEntries(Object.entries(subs).filter(([, s]) => (s.tomb ? now - s.doneAt < SUB_TOMB_MS
+    : s.doneAt ? batch[s.parent].running || now - batch[s.parent].last < SUB_DONE_MS : live(s))));
 }
 // The sub-agents as agents (working, or done once stopped), so the welcome, the finish, the power bar
 // and his metrics see them like any agent. Their address is `<parent>~<id>`; foldSubs puts them back.
