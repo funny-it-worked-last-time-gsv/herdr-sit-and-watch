@@ -1159,7 +1159,7 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
 
 // ---- real activity: the PreToolUse hook → the desk's bubble ------------------------------------------
 {
-  // Value: protects=the activity hook turning tool calls into short phrases (Edit/Read <file>, Run <cmd>,
+  // Value: protects=the activity hook turning tool calls into short phrases (Edit/Read <file>, a command's program,
   //   Grep/Glob <pattern>, "> " for a sub-agent, Use <MCP service>; a command shows only its program and subcommand, never assignments, paths or
   //   arguments that could hold secrets), sent base64url with the terminal and decoded by the panel; a desk's bubble saying
   //   its fresh activity (under a minute) through screenshot mode, else its title; malformed or non-ASCII commands
@@ -1187,14 +1187,14 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   const sent = existsSync(out) ? rf(out, "utf8").trim().split("\n") : [];
   const decoded = sent.map((l) => R.parseActCommand(l.replace(/^do sitandwatch\./, "")));
   const texts6 = decoded.map((d) => d && `${d.term}:${d.text}`);
-  const want = ["t8:Edit main.js", "t8:Run npm test", "t8:Read README.md", "t8:Grep useAuth", "t8:> Review the diff", "t8:Run curl"];
+  const want = ["t8:Edit main.js", "t8:npm test", "t8:Read README.md", "t8:Grep useAuth", "t8:> Review the diff", "t8:curl"];
   if (JSON.stringify(texts6) !== JSON.stringify(want) || bad.status !== 0) fails.push(`act: the hook should send these phrases and nothing else, got ${JSON.stringify(texts6)} exit ${bad.status}`);
   if (sent.some((l) => !/^do sitandwatch\.act-t8-[A-Za-z0-9_-]+$/.test(l))) fails.push(`act: commands should be letters, digits, - and _ only, got ${JSON.stringify(sent)}`);
   // Repeats: the same phrase again within 30s isn't sent (it costs a process and Herdr's dispatch);
   // another phrase is, and so is the same one once the last send is 30s old.
   const count = () => (existsSync(out) ? rf(out, "utf8").trim().split("\n").length : 0);
   const c0 = count();
-  run(pre("Read", { file_path: "/a/README.md" }));                 // the last phrase sent above was "Run curl"
+  run(pre("Read", { file_path: "/a/README.md" }));                 // the last phrase sent above was "curl"
   run(pre("Read", { file_path: "/a/README.md" }));                 // a repeat: skipped
   const c1 = count();
   const cache = join(dir, "sitandwatch-act-t8"), [, last] = rf(cache, "utf8").split("\t");
@@ -1227,9 +1227,12 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
     [["Grep", { pattern: "hunter2" }], "Grep ***"],
     [["Grep", { pattern: "p4ssw0rd!" }], "Grep ***"],
     [["WebSearch", { query: "is eyJhbGciOiJIUzI1NiJ9 valid" }], "Search is *** valid"],
-    [["Bash", { command: "printf ghp-abcdefghijklmnop | gh auth login" }], "Run printf"],
-    [["Bash", { command: "cd client-acme-secret && npm test" }], "Run cd"],
-    [["Bash", { command: "git push -u origin main" }], "Run git push"],
+    [["Bash", { command: "printf ghp-abcdefghijklmnop | gh auth login" }], "printf"],
+    [["Bash", { command: "cd client-acme-secret && npm test" }], "npm test"],          // setup steps (cd, export, VAR=) skipped
+    [["Bash", { command: "cd ~/proj && git diff --stat a b | tail -3; echo done" }], "git diff"],
+    [["Bash", { command: "S=/x; export Y=1; pushd $S && python3 run.py" }], "python3"],
+    [["Bash", { command: "cd /tmp" }], "cd"],                                          // all setup: the first of it
+    [["Bash", { command: "git push -u origin main" }], "git push"],
     [["Grep", { pattern: "useAuth" }], "Grep useAuth"],
     [["Read", { file_path: "/a/a-very-long-file-name.md" }], "Read a-very-long-..."],   // mid-word: a word cut would leave only "Read"
     [["Task", { description: "Review the diff and fix it" }], "> Review the diff..."],     // a word ending right at the limit stays whole
