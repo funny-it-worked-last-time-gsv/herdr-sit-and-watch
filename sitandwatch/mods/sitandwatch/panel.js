@@ -2,18 +2,13 @@ import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run } from "herdr";
 import { ink, SCREEN, r, txt, look, bot, spectator, explosion, DEV_W, DEV_H } from "./art.js";
-
-const LONG_IDLE = 10 * 60 * 1000;
+import { DEV_FIRE, effectiveMood, isNight } from "./rules.js";
 
 // ---- developer mode -------------------------------------------------------
 // `herdr-app do sitandwatch.dev` shows a strip under the header: the numbers the mood is picked
 // from, and buttons to force a level, pin a lasting mood or fire any one-shot event.
 const DEV_MOODS = ["auto", "normal", "glazed", "glazedHard", "slumped", "multiBlocked", "pointAtBlocked", "allBlocked",
   "fourthWall", "longIdle", "lateNight", "howMany"];
-const DEV_FIRE = ["finish", "phone", "yes?", "collapse", "burst", "streak", "error", "welcome", "levelUp", "linger",
-  "poke", "chaos", "pushed", "merged", "deployed"];
-// one-shots that take over the mood; the cosmetic ones (levelUp, linger, poke) don't
-const TAKES_OVER = ["finishPump", "blockedPhone", "collapse", "newAgentWelcome", "errorWince", "burstDance", "streak", "areYouSure"];
 
 function chip(label, on, onClick, key) {
   return div().id(`dev-${key}`).px(3).bg(on ? "#ffd86a" : "#4a5263").cursor_pointer()
@@ -38,38 +33,7 @@ function devStrip(dev, mood, level, m) {
 
 
 // Sidebar version: a small grid of desks (one per agent) and the dev in the corner chair below,
-// getting more worked up the more agents are working.
-export function devLevel(list) {
-  const working = list.filter((a) => a.status === "working").length;
-  return !working ? 0 : working >= 4 || (working === list.length && working >= 2) ? 3 : working >= 2 ? 2 : 1;
-}
-
-// One dominant mood from everything the panel knows; first match wins. m comes from main.js
-// (trackMetrics) or a demo state: counts, durations in ms, ticks left of each one-shot in m.fx.
-const MIN = 60 * 1000;
-export function resolveMood(m, level) {
-  const fx = m.fx ?? {};
-  if (fx.burstDance > 0) return "burst";
-  if (fx.streak > 0) return "streak";
-  if (fx.errorWince > 0) return "error";
-  if (fx.collapse > 0) return "collapse";
-  if (fx.finishPump > 0) return "finish";
-  if (m.blocked >= 2 && m.working === 0) return "allBlocked";
-  if (m.blocked >= 2) return "multiBlocked";
-  if (m.blocked >= 1 && m.longestBlockedMs > 2 * MIN) return "pointAtBlocked";
-  if (fx.areYouSure > 0) return "areYouSure";
-  if (fx.blockedPhone > 0 || m.blocked === 1) return "blocked";
-  if (fx.newAgentWelcome > 0) return "welcome";
-  if (m.longestWorkingMs > 60 * MIN) return "slumped";
-  if (m.longestWorkingMs > 30 * MIN) return "glazedHard";
-  if (m.longestWorkingMs > 10 * MIN) return "glazed";
-  if (m.userIdleMs > 5 * MIN && m.working > 0) return "fourthWall";
-  if (m.working === 0 && m.blocked === 0 && m.idleMs > LONG_IDLE) return "longIdle";
-  if (level > 0 && isNight(m.hour)) return "lateNight";
-  if (m.seen >= 10 && level > 0) return "howMany";
-  return "normal";
-}
-const isNight = (h) => h >= 22 || h < 6;
+// getting more worked up the more agents are working. The level and mood come from rules.js.
 
 // Which agents are in: "claude" or "codex" when they're most of them, "mixed" for two or more kinds.
 function provider(list) {
@@ -124,12 +88,10 @@ export function panel(list, party = false, opts = {}) {
   const ship = opts.ship ?? null;                     // null, or the explosion's stage (0, 1)
   const m = opts.m ?? null;
   const dev = opts.dev ?? null;
-  const level = ship != null ? 3 : dev?.level ?? devLevel(list), panic = list.some((a) => a.status === "blocked");
+  const { level, mood } = effectiveMood(list, m, dev, ship);
+  const panic = list.some((a) => a.status === "blocked");
   const working = list.filter((a) => a.status === "working").length;
   const devW = DEV_W * ds, devH = DEV_H * ds, cornerH = devH + 26;
-  // In developer mode a pinned mood wins, unless a one-shot (fired or real) is running.
-  const busyOneShot = TAKES_OVER.some((k) => (m?.fx?.[k] ?? 0) > 0);
-  const mood = ship != null || !m ? "normal" : dev?.mood && !busyOneShot ? dev.mood : resolveMood(m, level);
   const markAddr = mood === "pointAtBlocked" ? m.longestBlockedAddr : mood === "welcome" ? m.welcomeAddr
     : mood === "streak" ? m.streakAddr : mood === "areYouSure" ? m.aysAddr : null;
   const name = list.find((a) => a.address === markAddr)?.tab_name ?? "";
