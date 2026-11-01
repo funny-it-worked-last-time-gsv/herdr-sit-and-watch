@@ -278,8 +278,7 @@ export default class Office extends View {
     };
     if (this.min) {                                          // back to the size it had
       const was = this.min;
-      this.setMin(null);                                    // heightTick (maybe in another copy) waits while Herdr catches up
-      try { localStorage.setItem("restoredAt", String(Date.now())); } catch {}
+      this.setMin(null); this.restoredFrom = was.saved ?? null;   // heightTick: the size before, while Herdr catches up
       resize({ id: was.id, ...(was.saved ?? { weight: 1 }) }, () => this.setMin(was));
     } else {
       let b;
@@ -334,13 +333,10 @@ export default class Office extends View {
     if (now < (this.heightRetryAt ?? 0) && this.heightRetryFor === h) return;
     let b = null; try { b = findBlock(layout()); } catch {}
     let saved = null; try { saved = JSON.parse(localStorage.getItem("height") ?? "null"); } catch {}
-    // minimised and just-restored are read from storage: any copy may have clicked _ or +, this one plans
-    let minimised = !!this.min, restoredAt = 0;
-    try { minimised = !!JSON.parse(localStorage.getItem("min") ?? "null"); restoredAt = Number(localStorage.getItem("restoredAt") ?? 0); } catch {}
-    const settling = now - restoredAt <= MIN_GUARD_MS;
-    const plan = planHeight({ height: h, saved, b, minimised, first, settling });
-    // the first look counts once there's a settled, unminimised block to look at (a restart's re-apply waits for that)
-    if (b && (b.ok || b.reason === "min") && !minimised && !settling) this.heightTicked = true;
+    const minimised = !!this.min;
+    const plan = planHeight({ height: h, saved, b, minimised, first, restoredFrom: this.restoredFrom });
+    // the first look counts once there's an unminimised block to look at (a restart's re-apply waits for that)
+    if (b && (b.ok || b.reason === "min") && !minimised) this.heightTicked = true;
     const store = (v) => { try { v ? localStorage.setItem("height", JSON.stringify(v)) : localStorage.removeItem("height"); } catch {} };
     // any change to what's set (a resize or not) makes an older refusal old news
     if (JSON.stringify(plan.saved) !== JSON.stringify(saved)) { store(plan.saved); this.heightSeq = (this.heightSeq ?? 0) + 1; }
