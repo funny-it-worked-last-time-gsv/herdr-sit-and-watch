@@ -79,8 +79,8 @@ Click **OPTS** in the panel's header, or run `herdr-app do sitandwatch.options`,
   `herdr-app do sitandwatch.height-400` (or `height-layout`). Only in the sidebar (a column).
 - **Floor:** slate (the default; the orange and tan pets stand out on it), tan (the original), deep
   teal, sage or night navy.
-- **Pets:** switch Buddy, Snowy or Simba off. Their names and coats are the `PETS` table in
-  `art.js`.
+- **Pets:** switch Buddy, Snowy or Simba off. Recolour their coats in the `PETS` table in
+  `art.js` (the names double as ids, so a rename needs a code change).
 - **Speech bubbles:** off and he still reacts, silently.
 - **Chaos mode** and **developer mode**, the same as their commands below.
 

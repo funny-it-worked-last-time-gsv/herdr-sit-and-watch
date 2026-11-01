@@ -39,7 +39,7 @@ export function optionsDialog(handle) {
         ...HEIGHTS.map((h) => pill(`height-${h}`, `${h}`, o.height === h, () => setOption({ height: h })))]))
     .child(section("Floor", "Behind the desks and the armchair.",
       Object.entries(FLOORS).map(([k, f]) => pill(`floor-${k}`, f.name, o.floor === k, () => setOption({ floor: k }), f.color))))
-    .child(section("Pets", "Who lives in the corner (names and coats: PETS in art.js).",
+    .child(section("Pets", "Who lives in the corner (their coats: PETS in art.js).",
       PETS.map((p) => pill(`pet-${p.name}`, p.name, o.pets[p.name], () => setOption({ pets: { ...o.pets, [p.name]: !o.pets[p.name] } })))))
     .child(section("Speech bubbles", "What he says. Off: he still reacts, silently.", onOff("speech", "speech", o.speech)))
     .child(section("Chaos mode", "Lingering confetti and faster everything, for good.", onOff("chaos", "chaos", o.chaos)))
