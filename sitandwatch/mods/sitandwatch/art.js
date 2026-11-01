@@ -101,7 +101,8 @@ export const CATS = ["#e0913a", "#5b5b66", "#2a2a2a", "#f4f0e6", "#a0704a"];
 export const cat = (coat, s, left) => sprite(left ? CAT.map((row) => [...row].reverse().join("")) : CAT, { O: coat, E: "#7bd389" }, s);
 
 // ---- the household: two cats and a beagle who are disappointed in him -----------
-// Edit this to make them your own pets: name, kind ("cat" or "beagle") and coat colours.
+// Recolour them to look like your own pets: the coat colours. The names are also their ids (Options,
+// poses, where they sit and wander), so renaming one means renaming it in rules.js and here too.
 // The first cat sleeps on the chair back; the second knocks his can off and goes out at night.
 export const PETS = [
   { name: "Buddy", kind: "beagle", coat: { B: "#7a4a24", T: "#d9a25a", W: "#f4f0e6", K: "#2a2320" } },

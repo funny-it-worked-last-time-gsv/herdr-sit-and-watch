@@ -1324,7 +1324,7 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
 
 // ---- ship run 2 review fixes ----------------------------------------------------------------
 {
-  // Value: protects=a fresh finish time after done→working→done between polls; a restart's height re-apply retried after a
+  // Value: protects=a fresh finish time after done→working→done between polls; just after a restore the restore size (not the strip) as "the size before"; a restart's height re-apply retried after a
   //   refusal; a refused "layout" restore rolled back and retried; a new choice not held up by an old refusal's wait; a late
   //   refusal not undoing a newer choice; no planning while the block still reads strip-sized; keepMin trusting the size seen
   //   after the shrink (reverted: only an open block drops it); only the owning copy saving sub-agents; fails_when=any of those rules is reverted;
@@ -1332,8 +1332,8 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
   const mn = { id: "sitandwatch", axis: "column", saved: { px: 300 }, at: 0, seen: 300 }, blk = (px) => ({ ok: true, id: "sitandwatch", axis: "column", size: { px } });
   if (R.keepMin({ ...mn, seen: 30 }, blk(300), 1e9)) fails.push("fixes2: keepMin should drop a strip whose block reads open (not what was seen)");
-  const strip = R.planHeight({ height: 400, saved: null, b: blk(30), minimised: false, first: false, settling: true });
-  if (strip.resize || strip.saved) fails.push(`fixes2: planHeight should wait while just restored (settling), got ${JSON.stringify(strip)}`);
+  const strip = R.planHeight({ height: 400, saved: null, b: blk(30), minimised: false, first: false, restoredFrom: { px: 300 } });
+  if (JSON.stringify(strip.saved?.from) !== '{"px":300}') fails.push(`fixes2: just restored, a strip-sized reading should take the restore's size as the size before, got ${JSON.stringify(strip)}`);
   const small = R.planHeight({ height: 400, saved: null, b: blk(120), minimised: false, first: false });
   if (JSON.stringify(small.resize) !== '{"px":400}') fails.push(`fixes2: a small but open block (dragged) should still take a height, got ${JSON.stringify(small)}`);
 
@@ -1405,13 +1405,7 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   rejectB?.(new Error("late")); await S.settle(); await S.settle();
   let hb = null; try { hb = JSON.parse(localStorage.getItem("height")); } catch {}
   if (hb?.h !== 240 || hb?.from?.px !== 300) fails.push(`fixes2: a no-resize choice should outlive an older refusal, height=${JSON.stringify(hb)}`);
-    // Another copy minimised the panel: the copy that plans heights sees it (shared storage), and doesn't resize.
-  world.layout = lay(30); localStorage.removeItem("height"); world.runs = [];
-  localStorage.setItem("min", JSON.stringify({ id: "sitandwatch", axis: "column", saved: { px: 300 }, at: 0, seen: 30 }));
-  world.shared["sitandwatch.options"] = { height: 300 }; S.advance(1000);
-  if (sized().length) fails.push(`fixes2: a height shouldn't be applied while another copy has the panel minimised, got ${sized()}`);
-  localStorage.removeItem("min");
-  // ABA: 400 refused late, after 300 then 400 again went through: the newer 400 (and its old size) stay.
+    // ABA: 400 refused late, after 300 then 400 again went through: the newer 400 (and its old size) stay.
   world.layout = lay(250); localStorage.removeItem("height"); world.runs = [];
   let rejectA; world.runResult = () => new Promise((_, rj) => { rejectA = rj; });
   world.shared[OPTKEY] = { height: 400 }; S.advance(1000);
@@ -1425,10 +1419,12 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   world.layout = lay(300); world.shared[OPTKEY] = { height: 400 };
   const h4 = new Office(); h4.init(world.props, makeCx());
   h4.setMin({ id: "sitandwatch", axis: "column", saved: { px: 300 }, at: clock.now - 10000, seen: 30 }); h4.minBusy = false;
-  world.runs = []; h4.minimise(makeCx()); world.runs = []; S.advance(1000);   // a real restore ("+"): then settling
-  if (sized().length) fails.push(`fixes2: nothing should be resized while settling, got ${sized()}`);
-  S.advance(4000);
-  if (!sized().includes('{"id":"sitandwatch","px":400}')) fails.push(`fixes2: the restart's re-apply should run once settled, got ${sized()}`);
+  localStorage.removeItem("height"); world.shared[OPTKEY] = { height: null };
+  world.layout = lay(30); world.runs = []; h4.minimise(makeCx()); world.runs = []; S.advance(1000);   // a real restore ("+"); Herdr still reads 30
+  world.shared[OPTKEY] = { height: 400 }; S.advance(1000);                                           // then a height is chosen
+  if (!sized().includes('{"id":"sitandwatch","px":400}')) fails.push(`fixes2: after a restore the chosen height should apply, got ${sized()}`);
+  let hr = null; try { hr = JSON.parse(localStorage.getItem("height")); } catch {}
+  if (hr?.from?.px !== 300) fails.push(`fixes2: a restore read as a strip should keep the restore's size as the size before, got ${JSON.stringify(hr)}`);
   world.layout = null; world.runs = []; world.shared[OPTKEY] = {};
 }
 

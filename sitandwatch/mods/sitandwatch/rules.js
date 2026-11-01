@@ -214,11 +214,11 @@ export const shouldClearMin = (sizePx, minAt, now) => now - minAt > MIN_GUARD_MS
 // - The same choice: nothing, so a drag of the sidebar line stands; except on a first tick with the block
 //   back at its size from before (Herdr restarted and the layout put it back): set it again.
 const sameSize = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-// settling: just restored from the strip, and Herdr may still read the block small: wait (so a strip is
-// never taken as "the size before").
-export function planHeight({ height, saved, b, minimised, first, settling = false }) {
+// restoredFrom: the size the last restore from the strip went back to; while Herdr may still read the
+// block strip-sized, that (not the strip) is "the size before".
+export function planHeight({ height, saved, b, minimised, first, restoredFrom = null }) {
   const keep = { resize: null, saved: saved ?? null, warn: null };
-  if (minimised || settling) return keep;
+  if (minimised) return keep;
   const found = !!b && (b.ok || b.reason === "min");
   if (!height) {
     if (saved && found && b.id === saved.id && !sameSize(b.size, saved.from)) return { resize: saved.from ?? { weight: 1 }, saved: null, warn: null };
@@ -228,7 +228,8 @@ export function planHeight({ height, saved, b, minimised, first, settling = fals
   if (b.axis !== "column") return { ...keep, warn: "row" };
   if ((b.min ?? 0) > height) return { ...keep, warn: "small" };
   if (!saved || saved.id !== b.id || saved.h !== height) {
-    const from = saved?.id === b.id ? saved.from : b.size ?? null;
+    const small = Number.isFinite(b.size?.px) && b.size.px < MIN_OPEN && restoredFrom;
+    const from = saved?.id === b.id ? saved.from : small ? restoredFrom : b.size ?? null;
     return { resize: b.size?.px === height ? null : { px: height }, saved: { id: b.id, h: height, from }, warn: null };
   }
   if (first && b.size?.px !== height && sameSize(b.size, saved.from)) return { ...keep, resize: { px: height } };

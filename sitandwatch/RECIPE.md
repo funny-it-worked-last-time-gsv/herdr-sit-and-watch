@@ -189,7 +189,8 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 
 - `PETS` in `art.js`: `{ name, kind, coat }`, Buddy (beagle: `B #7a4a24` brown, `T #d9a25a` tan,
   `W #f4f0e6` white, `K #2a2320` nose and eyes), Snowy (cat, white `#f4f0e6`) and Simba (cat,
-  orange `#e0913a` / `#b86a24`), inner ears `#f2b8c0`. Edit it to make them your own pets.
+  orange `#e0913a` / `#b86a24`), inner ears `#f2b8c0`. Recolour the coats to make them
+  look like your own pets; the names are also ids (Options, `petPoses`, `HOME`/`EXIT`), so a rename touches all of them.
 - Drawn as rows of palette letters (`POSE` in `art.js`) at the corner's scale 3, packed by
   `blocks()`/`pack()` into a few layered rectangles (cached), so a pet costs a handful of divs.
   Cat: `sit` and `back` 9×12, `curl` 12×6 (knocks use `sit` raised onto the armrest or chair back).
@@ -344,8 +345,9 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   and the block's size before). A new choice resizes once (`layout.resize { id, px }`; a layout `min`
   above the strip is fine up to the height chosen). The same choice leaves a drag of the sidebar line
   alone, except on a copy's first tick with the block back at `from` (Herdr restarted): set again.
-  `layout` resizes back to `from` (or weight 1). Never while minimised, nor in the 3s after a restore
-  (`restoredAt`: Herdr may still read the block small); a late refusal only counts if no resize came after. A docked (row), missing,
+  `layout` resizes back to `from` (or weight 1). Never while minimised; just after a restore, while Herdr
+  may still read the block strip-sized, `from` is the size the restore went back to (`restoredFrom`). A
+  late refusal only counts if nothing was set after it. Each copy plans from its own minimise state. A docked (row), missing,
   ambiguous or too-small block says why once (`HEIGHT_TROUBLE`); a refused resize says so once and
   is retried 30s later. `height-<240|300|400|500|layout>` sets the option; anything else is ignored.
   For a drag handle, the layout's `sidebar` column needs `"resizable": true`.
