@@ -27,7 +27,7 @@ registerHooks({
 
 const S = await import(STUBS);
 const { default: Office } = await import(pathToFileURL(join(MOD, "main.js")).href);
-const { clock, world, makeCx, reseed, texts, ids, count, walk } = S;
+const { clock, world, makeCx, reseed, texts, ids, count, walk, sendCommand } = S;
 
 // Intended differences from the golden (new features), and the element budget headroom.
 const ALLOWED = { newChips: ["power", "petPoke", "canKnock"], newOneShots: ["powerUp", "petPoke"], newDemoStates: 1 };
@@ -43,7 +43,7 @@ function mount(hour = 12) {
   clock.now = atHour(hour); clock.timers.length = 0; reseed(1);
   localStorage.clear();
   world.props = { role: "panel" }; world.agents = []; world.runs = []; world.notes = [];
-  world.hcLs = { terminals: [] }; world.hcGet = {}; world.shared = {}; world.overlays = [];
+  world.hcLs = { terminals: [] }; world.hcGet = {}; world.shared = {}; world.overlays = []; world.layout = null; world.runResult = null;
   const cx = makeCx(), o = new Office();
   o.init(world.props, cx);
   return { o, cx };
@@ -784,6 +784,72 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   f.m.power = 600;
   const fill = (t) => { let w = null; walk(t, (e) => { if (e.idv === "saw-power-fill") w = e.calls.find(([k]) => k === "w")?.[1][0]; }); return w; };
   if (fill(render(f, ["working"])) !== 20) fails.push(`power: half full should draw 20px of 40, got ${fill(render(f, ["working"]))}`);
+}
+
+// ---- minimise -----------------------------------------------------------------------
+{
+  // Value: protects=minimise: finding this panel's block (panel role only, refusing when ambiguous, no id, or min too big),
+  // shrinking to a 30px strip in a column or a 40px rail in a row, restoring the saved size, a toast for every failure,
+  // one action per double click, the dragged-open check, and the button not starting the demo;
+  // fails_when=any of those rules breaks; why_new=no other check touches layout() or layout.resize; seam=none;
+  // no_claim=Herdr's real layout engine and toasts (fake layout()/run/notify; checked live once by hand)
+  const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
+  const blk = (extra = {}) => ({ id: "sitandwatch", type: "block", content: { mod: "sitandwatch" }, size: { px: 300 }, ...extra });
+  const tree = (kids, type = "column") => ({ id: "root", type: "row", children: [{ id: "sidebar", type, children: kids }] });
+  const fb = (t) => JSON.stringify(R.findBlock(t));
+  if (fb(tree([blk()])) !== JSON.stringify({ ok: true, id: "sitandwatch", axis: "column", target: 30, size: { px: 300 } })) fails.push(`min: a column block should shrink to a 30px strip, got ${fb(tree([blk()]))}`);
+  if (R.findBlock(tree([blk()], "row")).target !== 40) fails.push("min: a row block should shrink to a 40px rail");
+  if (R.findBlock(tree([blk(), { id: "office", content: { mod: "sitandwatch", props: { role: "office" } } }])).ok !== true) fails.push("min: the office view shouldn't count as a panel");
+  const why = (t) => R.findBlock(t).reason;
+  if (why(tree([])) !== "none" || why(tree([blk(), blk({ id: "two" })])) !== "ambiguous" || why(tree([blk({ id: undefined })])) !== "noid" || why(tree([blk({ min: 220 })])) !== "min")
+    fails.push(`min: refusals should be none/ambiguous/noid/min, got ${[why(tree([])), why(tree([blk(), blk({ id: "two" })])), why(tree([blk({ id: undefined })])), why(tree([blk({ min: 220 })]))]}`);
+  if (R.shouldClearMin(250, 0, 2000) || !R.shouldClearMin(250, 0, 4000) || R.shouldClearMin(100, 0, 4000)) fails.push("min: dragged open is >= 139px after the 3s guard");
+
+  // Live in a column: the button shrinks to the strip, a double click is one action, the strip shows count/bar/face.
+  S.dropCommandWaiters();                                // earlier mounts' loops would take the command
+  const { o, cx } = mount();
+  world.layout = tree([blk()]);
+  const t0 = render(o, ["working", "idle"]);
+  let btn = null; walk(t0, (e) => { if (e.idv === "saw-min") btn = e; });
+  if (!btn?.handlers.on_mouse_down || !btn.handlers.on_click) fails.push("min: the _ button should handle its own mouse-down and click");
+  const c1 = makeCx(); btn?.handlers.on_click?.({}, c1); btn?.handlers.on_click?.({}, makeCx());
+  const resizes = () => world.runs.filter(([n]) => n === "layout.resize");
+  if (!c1.stopped) fails.push("min: the _ click should stop propagation (no demo)");
+  if (JSON.stringify(resizes()) !== JSON.stringify([["layout.resize", { id: "sitandwatch", px: 30 }]])) fails.push(`min: one click should resize once to 30px, got ${JSON.stringify(resizes())}`);
+  const ts = render(o, ["working", "idle"]);
+  if (!ids(ts).includes("saw-strip") || ids(ts).includes("saw-panel") || !texts(ts).includes("1/2 AT IT") || !ids(ts).some((x) => x.startsWith("mini-face-")))
+    fails.push("min: minimised in a column should draw the strip with the count and his face");
+  // Restore: the saved size goes back.
+  S.advance(1000);
+  sendCommand("min"); await S.settle();
+  if (JSON.stringify(resizes().at(-1)) !== JSON.stringify(["layout.resize", { id: "sitandwatch", px: 300 }]) || o.min) fails.push(`min: restore should resize back to 300px, got ${JSON.stringify(resizes().at(-1))}`);
+  // Dragged open: shrink, Herdr reports 30, then 250 -> the full panel again.
+  S.advance(1000); o.minimise(cx); world.layout = tree([blk({ size: { px: 30 } })]);
+  S.advance(4000);
+  if (!o.min || o.min.seen !== 30) fails.push(`min: it should note the size Herdr reports after shrinking, got ${JSON.stringify(o.min)}`);
+  world.layout = tree([blk({ size: { px: 250 } })]); S.advance(1000);
+  if (o.min) fails.push("min: dragged open to 250px should clear minimised");
+  // A layout() that keeps saying the configured size never clears it.
+  world.layout = tree([blk()]); o.minimise(cx); S.advance(6000);
+  if (!o.min) fails.push("min: a layout() that always reports 300px shouldn't clear minimised");
+  o.setMin(null);
+
+  // Failures: a toast each, nothing left half-done.
+  const { o: f, cx: fcx } = mount();
+  const tryMin = (t, result) => { world.notes = []; world.runs = []; world.layout = t; world.runResult = result ?? null; f.minBusy = false; f.minimise(fcx); return world.notes.map((n) => n.body).join(" | "); };
+  render(f, ["working"]);
+  if (!tryMin(tree([blk({ min: 220 })])).includes("lower my block's min") || f.min || world.runs.length) fails.push("min: a block min over 30 should toast and not resize");
+  if (!tryMin(tree([blk(), blk({ id: "two" })])).includes("Two Sit & Watch panels")) fails.push("min: two panels should toast");
+  if (!tryMin(null).includes("Can't find my block")) fails.push("min: no block should toast");
+  if (!tryMin(tree([blk()]), () => ({ error: "no node" })).includes("Herdr refused") || f.min) fails.push(`min: a refused resize should toast and stay unminimised, min=${JSON.stringify(f.min)}`);
+
+  // In a row: a rail.
+  const { o: w, cx: wcx } = mount();
+  world.layout = tree([blk()], "row"); world.runs = [];
+  render(w, ["working"]); w.minimise(wcx);
+  const tr = render(w, ["working"]);
+  if (!ids(tr).includes("saw-rail") || JSON.stringify(world.runs.at(-1)) !== JSON.stringify(["layout.resize", { id: "sitandwatch", px: 40 }])) fails.push("min: docked in a row it should be a 40px rail");
+  for (const t of [ts, tr]) noErr(t, "min");
 }
 
 const budget = g.budget.max + BUDGET_HEADROOM, over = snap.demo.counts.map((n, i) => [i + 1, n]).filter(([, n]) => n > budget);

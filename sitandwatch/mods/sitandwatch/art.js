@@ -707,6 +707,20 @@ export function spectator(level, s, id, opts) {
     .when((!dozing || idleTalk) && o.speech !== false, (e) => e.child(say));
 }
 
+// His face for the minimised strip and rail: 12x7 art pixels at scale s (2: 24x14 px). Brows and
+// mouth follow his level as in spectator(); sad when an agent needs you; a nightcap at night.
+export function miniFace(level, mood, sad, s = 2) {
+  const face = ["...HHHHHH...", "..HHHHHHHH..", "..HSSSSSSH..", "..SSESSESS..", "..SSSSSSSS..", "...SSSSSS...", "....SSSS...."];
+  const R = (x, y, w, h, c) => r(x * s, y * s, w * s, h * s, c);
+  const L = mood === "power" || mood === "burst" || mood === "streak" ? 3 : level;
+  return div().relative().w(12 * s).h(7 * s).id(`mini-face-${L}-${sad}`)
+    .child(sprite(face, { H: DEV.hair, S: DEV.skin, E: "#1b1b1b" }, s).absolute().left(0).top(0))
+    .when(sad, (e) => e.child(R(5, 5, 2, 1, "#4a1010")).child(R(4, 6, 1, 1, "#4a1010")).child(R(7, 6, 1, 1, "#4a1010")))
+    .when(!sad, (e) => e.child(R(5, 5, 2, L >= 3 ? 2 : 1, L === 0 ? "#a0522d" : "#4a1010")))
+    .when(!sad && L >= 1, (e) => e.child(R(3, L >= 2 ? 1 : 2, 2, 1, DEV.hair)).child(R(7, L >= 2 ? 1 : 2, 2, 1, DEV.hair)))
+    .when(!sad && L >= 2, (e) => e.child(R(3, 3, 2, 1, "#ffffff")).child(R(7, 3, 2, 1, "#ffffff")).child(R(4, 3, 1, 1, "#1b1b1b")).child(R(7, 3, 1, 1, "#1b1b1b")));
+}
+
 // ---- bots: the panel's workers, seen from behind like seated() ------------
 // Plain rectangles, not sprite(): a sprite is one div per colour run, and a few dozen of those per
 // desk made the sidebar's render run long enough for Herdr to cut it off.

@@ -99,7 +99,8 @@ export const spaces = () => world.spaces;
 export const panes = () => world.panes;
 export const knownAgents = () => world.agents;
 export const setAgentOrder = () => {};
-export const run = (name, args) => { world.runs.push([name, args]); };
+// A test can make a command fail the way Herdr reports it: world.runResult = (name, args) => ({ error: "..." }).
+export const run = (name, args) => { world.runs.push([name, args]); return world.runResult?.(name, args); };
 export const notify = (n) => { world.notes.push(n); };
 export const layout = () => world.layout;
 export const shared = (k) => world.shared[k];

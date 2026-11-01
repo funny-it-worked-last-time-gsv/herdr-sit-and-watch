@@ -47,6 +47,14 @@ Click the header, or run `herdr-app do sitandwatch.demo`, to cycle through all 2
 (the animation above is one cycle).
 Click a desk to jump to that agent.
 
+### Minimise
+
+Click **\_** at the right of the header (or run `herdr-app do sitandwatch.min`) to shrink the panel to a
+30px strip: the count, the power bar and his face, still reacting. In the sidebar it's a strip; docked
+on the left or right of the window it's a 40px rail. Click **+** to bring it back to the size it had, or
+drag it open. If Herdr can't shrink it (no id on its block, two Sit & Watch panels, or a block `min`
+over 30), a message says why. Bring it back before removing the mod, or drag the block open after.
+
 ### Options
 
 Click **OPTS** in the panel's header, or run `herdr-app do sitandwatch.options`, for:
@@ -92,7 +100,7 @@ Ask your agent to add this mod (it reads every file first), or by hand:
 For the explosion on `git push`, `gh pr merge` or a production `vercel` deploy, install the Claude
 Code hook in `sitandwatch/hooks/` (setup in [RECIPE.md](sitandwatch/RECIPE.md#ship-hook)).
 
-Delete the folder and that block to remove it. It makes no network requests, runs no programs other than
+Delete the folder and that block to remove it (restore it first if minimised). It makes no network requests, runs no programs other than
 `hc ls` and `hc get` (to see background agents, crashes and how long each agent has been busy) and
 reads no files outside its folder. Nothing animates while
 nothing is happening.

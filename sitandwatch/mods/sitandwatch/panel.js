@@ -1,7 +1,7 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run } from "herdr";
-import { ink, SCREEN, r, txt, look, bot, spectator, stance, pets, explosion, DEV_W, DEV_H } from "./art.js";
+import { ink, SCREEN, r, txt, look, bot, spectator, stance, pets, explosion, miniFace, DEV_W, DEV_H } from "./art.js";
 import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES, FLOORS, cobwebLevel, DESK_AGES, POWER_FULL, POWER_STEPS, powerShown } from "./rules.js";
 import { options, openOptions } from "./options.js";
 
@@ -25,6 +25,7 @@ function devStrip(dev, mood, level, m, power = 0) {
       .child(div().flex_1()).child(chip(dev.open ? "hide" : "buttons", false, (cx) => dev.onOpen(cx), "open")))
     .child(txt(`longest work ${min(m?.longestWorkingMs)}  blocked ${min(m?.longestBlockedMs)}  quiet ${min(m?.idleMs)}`, 10, "#9aa3b0"))
     .child(txt(`you away ${min(m?.userIdleMs)}  seen ${m?.seen ?? 0}  power ${Math.round(power)}/${POWER_FULL}  ${m?.chaos ? "CHAOS" : ""}`, 10, "#9aa3b0"))
+    .when(!!dev.block, (e) => e.child(txt(`min ${dev.min}  block ${dev.block}`, 10, "#9aa3b0")))
     .when(!!live, (e) => e.child(txt(live, 10, "#ffd86a")))
     .when(dev.open, (e) => e.child(row([txt("level", 10, "#9aa3b0"), chip("real", dev.level == null, (cx) => dev.onLevel(null, cx), "lv-real"),
       ...[0, 1, 2, 3].map((n) => chip(String(n), dev.level === n, (cx) => dev.onLevel(n, cx), `lv-${n}`))]))
@@ -106,6 +107,31 @@ function desk(a, x, y, sw, rh, mark = null, idleMs = 0) {
       .child(txt((a.tab_name ?? "").slice(0, 12), 10, a.focused ? "#fff8e1" : ink))));
 }
 
+// The minimise button: its own mouse-down and click, so the header's demo toggle never fires.
+function minButton(label, onMin) {
+  return div().id("saw-min").px(3).cursor_pointer()
+    .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+    .on_click((_e, cx) => { cx.stop_propagation(); onMin(cx); })
+    .child(txt(label, 10, "#fff8e1"));
+}
+const powerBar = (power, vertical) => {
+  const n = Math.round((40 * powerShown(power)) / POWER_STEPS);
+  return vertical
+    ? div().id("saw-power").w(8).h(42).flex_none().bg("#2b2f3a").border(1).border_color("#7a4a28").child(r(0, 40 - n, 6, n, "#ffd86a").id("saw-power-fill"))
+    : div().id("saw-power").w(42).h(8).flex_none().bg("#2b2f3a").border(1).border_color("#7a4a28").child(r(0, 0, n, 6, "#ffd86a").id("saw-power-fill"));
+};
+// Minimised: a strip (in a column: 30px tall) or a rail (in a row: 40px wide) with the count, the
+// power bar, his face and the button to bring the panel back.
+function minimised(axis, list, level, mood, sad, opts) {
+  const working = list.filter((a) => a.status === "working").length;
+  const face = miniFace(level, mood, sad, 2);
+  if (axis === "row") return v_flex().id("saw-rail").size_full().overflow_hidden().bg("#8796b0").py(6).gap(6).items_center()
+    .child(face).child(txt(`${working}`, 10, "#fff8e1")).child(powerBar(opts.power ?? 0, true)).child(div().flex_1()).child(minButton("+", opts.onMin));
+  return h_flex().id("saw-strip").size_full().overflow_hidden().bg("#8796b0").px(8).gap(6).items_center()
+    .child(txt(`${working}/${list.length} AT IT`, 12, "#fff8e1")).child(div().flex_1())
+    .child(powerBar(opts.power ?? 0, false)).child(face).child(minButton("+", opts.onMin));
+}
+
 export function panel(list, party = false, opts = {}) {
   const sw = 84, rh = 56, ds = 3;
   const ship = opts.ship ?? null;                     // null, or the explosion's stage (0, 1)
@@ -113,6 +139,7 @@ export function panel(list, party = false, opts = {}) {
   const dev = opts.dev ?? null;
   const { level, mood } = effectiveMood(list, m, dev, ship);
   const panic = list.some((a) => a.status === "blocked");
+  if (opts.min) return minimised(opts.min, list, level, mood, panic && mood !== "power", opts);
   const working = list.filter((a) => a.status === "working").length;
   const devW = DEV_W * ds, devH = DEV_H * ds, cornerH = devH + 26;
   const markAddr = mood === "pointAtBlocked" ? m.longestBlockedAddr : mood === "welcome" ? m.welcomeAddr
@@ -146,14 +173,14 @@ export function panel(list, party = false, opts = {}) {
       .child(txt(opts.label ?? `${working}/${list.length} AT IT`, opts.label ? 10 : 12, "#fff8e1"))
       .child(div().flex_1())
       // the power bar: fills with working-agent seconds, POWER! when full
-      .child(div().id("saw-power").w(42).h(8).flex_none().bg("#2b2f3a").border(1).border_color("#7a4a28")
-        .child(r(0, 0, Math.round((40 * powerShown(opts.power ?? 0)) / POWER_STEPS), 6, "#ffd86a").id("saw-power-fill")))
+      .child(powerBar(opts.power ?? 0, false))
       // the Options dialog; its own click, so it doesn't start the demo
       .child(div().id("saw-opts").px(3).cursor_pointer()
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .on_click((_e, cx) => { cx.stop_propagation(); openOptions(); })
         .child(txt("OPTS", 10, "#dfe6f0")))
-      .child(txt(opts.label ? "STOP" : "DEMO", 10, opts.label ? "#ffd86a" : "#dfe6f0")))
+      .child(txt(opts.label ? "STOP" : "DEMO", 10, opts.label ? "#ffd86a" : "#dfe6f0"))
+      .when(!!opts.onMin, (e) => e.child(minButton("_", opts.onMin))))
     .when(!!dev, (e) => e.child(devStrip(dev, mood, level, m, opts.power ?? 0)))
     .child(div().id("saw-desks").flex().flex_wrap().justify_center().content_start().flex_1().w_full().overflow_hidden().pt(6)
       .children(list.map((a) => desk(a, 0, 0, sw, rh, a.address === markAddr ? mood : null, opts.idle?.[a.address] ?? 0))))
