@@ -198,6 +198,8 @@ export default class Office extends View {
           if (c.startsWith("fire-")) this.fire(c.slice(5), cx);
           if (c.startsWith("mood-")) { const v = c.slice(5); this.dev.mood = v === "auto" ? null : v; cx.notify(); }
           if (c.startsWith("level-")) { const v = c.slice(6); this.dev.level = v === "real" ? null : Number(v); cx.notify(); }
+          // pets-<scene|auto>: force the pets into a scene (see PET_SCENES in rules.js)
+          if (c.startsWith("pets-")) { const v = c.slice(5); this.dev.pets = v === "auto" ? null : v; cx.notify(); }
         }
       });
     }
@@ -569,6 +571,7 @@ export default class Office extends View {
         onMood: (v, cx) => { d.mood = v; cx.notify(); },
         onLevel: (v, cx) => { d.level = v; cx.notify(); },
         onFire: (v, cx) => this.fire(v, cx),
+        pets: d.pets, onPets: (v, cx) => { d.pets = v; cx.notify(); },
       } : null;
       try { return panel(list, (this.partyUntil ?? 0) > now, { toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev }); }
       catch (e) { return div().p(8).bg("#fff").child(txt(`ERR ${e?.message ?? e}`, 12, "#a8322a")); }

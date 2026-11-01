@@ -174,6 +174,20 @@ const POSE = {
       "OOOOOOOOOO",
       "OOOOOOOOO.",
     ],
+    back: [
+      "O.......O",
+      "OO.....OO",
+      "OOOOOOOOO",
+      "OOOOOOOOO",
+      "OoOOOOOoO",
+      ".OOOOOOO.",
+      "..OOOOO..",
+      ".OOOOOOO.",
+      ".OOoOoOO..",
+      "OOOOOOOOO.O",
+      "OOOOOOOOOOO",
+      "OOOOOOOOO..",
+    ],
     curl: [
       "..o.oOOO...",
       ".OOOOOOOOO.",
@@ -198,6 +212,43 @@ const POSE = {
       "..WWKKKKWW..",
       ".WWWWWWWWWW.",
     ],
+    paw: [
+      "..TTTTTTTT..",
+      ".BBTTTTTTBB.",
+      ".BBWWWWWWBB.",
+      ".BBWWWWWWBB.",
+      ".BBTWTTTTBB.",
+      ".BBTWWWWTBB.",
+      "...WWKKW....",
+      "...WWWWW....",
+      "..KWKKKKKK..",
+      "..KKKKKKKK..",
+      "..KKKKKKKKT.",
+      "..WWKKKKWW..",
+      ".WWWWWWWWWW.",
+    ],
+    howl: [
+      ".....WW.....",
+      "....TWWK....",
+      "...TTWW.....",
+      "..BTTTTT....",
+      ".BBKTTTTBB..",
+      ".BBTTTTTBB..",
+      ".BB.TTTTBB..",
+      "....WWWW....",
+      "..KKKKKKKK..",
+      "..KKKKKKKK..",
+      "..KKKKKKKKT.",
+      "..WWKKKKWW..",
+      ".WWWWWWWWWW.",
+    ],
+    eat: [
+      "..BB..........",
+      ".BTTTKKKKKK...",
+      "TTKTTKKKKKKKT.",
+      "WWWTTTTTTTTTT.",
+      ".W..WW....WW..",
+    ],
     curl: [
       "....BB.KKKK....",
       "..BTTTTKKKKKK..",
@@ -218,25 +269,35 @@ export function pet(p, pose, s, left = false) {
 }
 
 // Where each pet goes in the corner, in panel px from the chair's left edge (the corner is
-// DEV_W*3 wide, the chair drawn 16px down at scale 3, the rug from cornerH-16).
-// present: he's in the chair, so they're on the floor; else they sleep on it.
-export function pets(st, s, id) {
+// DEV_W*3 wide, the chair drawn 16px down at scale 3, the rug from cornerH-16). poses comes from
+// petPoses() in rules.js: { buddy, snowy, simba }.
+export function pets(poses, cornerH, s, id) {
   const [buddy, snowy, simba] = PETS;
-  const floor = st.cornerH - 8;                            // their feet, on the rug
-  const at = (x, bottom, node, rows) => div().absolute().left(x).top(bottom - rows * s).child(node);
-  if (!st.present) {
-    const seat = 16 + 17 * 3, back = 16 + 3 * 3;           // tops of the chair seat and back
-    return [
-      at(22, back + 3, pet(snowy, "curl", s), 5).id(`${id}-snowy-curl`),
-      at(12, seat + 5, pet(buddy, "curl", s), 5).id(`${id}-buddy-curl`),
-      at(30, seat - 6, pet(simba, "curl", s, true), 5).id(`${id}-simba-curl`),   // asleep on Buddy
-    ];
-  }
-  return [
-    at(-44, floor, pet(buddy, "sit", s), 13).id(`${id}-buddy-sit`),
-    at(100, floor, pet(snowy, "sit", s, true), 12).id(`${id}-snowy-sit`),
-    at(132, floor, pet(simba, "sit", s, true), 12).id(`${id}-simba-sit`),
-  ];
+  const floor = cornerH - 8;                               // their feet, on the rug
+  const seat = 16 + 17 * 3, back = 16 + 3 * 3, arm = 16 + 9 * 3;   // chair seat, back and armrest tops
+  const at = (x, bottom, p, pose, left = false) =>
+    div().absolute().left(x).top(bottom - POSE[p.kind][pose].length * s).child(pet(p, pose, s, left)).id(`${id}-${p.name}-${pose}`);
+  const out = [];
+  // Buddy: by the chair; at the popcorn when it's spilled (under the right of the chair)
+  const b = poses.buddy;
+  if (b === "curl") out.push(at(12, seat + 5, buddy, "curl"));
+  else if (b === "eat") out.push(at(22, floor, buddy, "eat", true));   // nose to the popcorn
+  else out.push(at(-44, floor, buddy, b));
+  if (b === "howl") out.push(div().absolute().left(-48).top(floor - 13 * s - 16).id(`${id}-awoo`)
+    .child(txt("AWOO", 10, "#3b2a1c").frames(["AWOO", "awoo", "AWOOO"], 400)));
+  // The cats: past the lamp, or curled on the chair, or the knocker up on the right armrest
+  const cat = (p, pose, spot) => {
+    if (pose === "gone") return;
+    if (pose === "curl") out.push(spot === 0 ? at(22, back + 3, p, "curl") : at(30, seat - 6, p, "curl", true));
+    else if (pose === "knock") out.push(at(56, arm + 2, p, "sit", true));
+    else out.push(at(spot === 0 ? 100 : 132, floor, p, pose, pose !== "back"));
+  };
+  cat(snowy, poses.snowy, 0);
+  cat(simba, poses.simba, 1);
+  // the can it pushed off, on the floor under the armrest
+  if (poses.snowy === "knock" || poses.simba === "knock")
+    out.push(r(66, floor - 9, 12, 9, "#c0c6cf").child(r(3, 0, 6, 9, "#c9302c")).id(`${id}-can-down`));
+  return out;
 }
 
 // ---- the room -------------------------------------------------------------
@@ -379,7 +440,9 @@ export function stance(level, o = {}) {
     : gl || mode === "multiBlocked" || mode === "pointAtBlocked" || mode === "areYouSure" ? 1
     : panic ? Math.min(level, 1) : level;                // a blocked agent kills the mood
   const present = L > 0 || panic || party || ship || ["collapse", "error", "welcome", "allBlocked", "longIdle"].includes(mode) || poke > 0;
-  return { depth, gl, mode, L, present };
+  const sad = panic && !["collapse", "burst", "streak", "areYouSure"].includes(mode);
+  const spilled = sad || mode === "error";               // popcorn on the floor
+  return { depth, gl, mode, L, present, sad, spilled };
 }
 
 export function spectator(level, s, id, opts) {
@@ -391,8 +454,7 @@ export function spectator(level, s, id, opts) {
   const { seed = 0, chaos = false, tint = null, linger = false, poke = 0, pokeLine = "", idleTalk = false, idleN = 0 } = o;
   const { finishPump = 0, blockedPhone = 0, collapse = 0 } = fx;
   const R = (x, y, w, h, c) => r(x * s, y * s, w * s, h * s, c);
-  const { depth, gl, mode, L, present } = stance(level, o);
-  const sad = panic && !["collapse", "burst", "streak", "areYouSure"].includes(mode);
+  const { depth, gl, mode, L, present, sad, spilled } = stance(level, o);
   const melt = mode === "allBlocked", dozing = mode === "longIdle";
   const pumpUp = mode === "pump" && finishPump >= 2;    // fist in the air for the first two ticks
   const phoneK = mode === "phone" ? 4 - blockedPhone : -1; // 0 phone out, 1 screen flashes, 2 still out, 3 gone
@@ -456,7 +518,6 @@ export function spectator(level, s, id, opts) {
   ];
 
   // ---- popcorn on the lap, unless he's standing, it's spilled or his hands are busy
-  const spilled = sad || mode === "error";
   const bucket = (x, y, h) => R(x, y, 6, h, "#f4f4f0").child(R(1, 0, 1, h, "#c9302c")).child(R(3, 0, 1, h, "#c9302c")).child(R(5, 0, 1, h, "#c9302c"));
   if (!spilled && L < 3 && mode !== "multiBlocked") {
     if (pumpUp) {
@@ -579,7 +640,7 @@ export function spectator(level, s, id, opts) {
   return chair()
     .when(depth >= 2, (e) => e.child(R(21, 7, 5, 2, "#dfe6f0")).child(R(22, 7, 3, 1, "#ffffff")))   // pillow on the armrest
     // a can on the armrest once it gets going
-    .when(L >= 2, (e) => e.child(R(22, 5, 3, 4, "#c0c6cf")).child(R(22, 6, 3, 2, red)).child(R(22, 5, 1, 4, "#eef2f6")))
+    .when(L >= 2 && !o.canDown, (e) => e.child(R(22, 5, 3, 4, "#c0c6cf")).child(R(22, 6, 3, 2, red)).child(R(22, 5, 1, 4, "#eef2f6")))
     .when(mode === "collapse" && collapse === 3, (e) => e.child(R(4, 17, 18, 1, CHAIR.d)))            // the cushion gives
     .child(shaker)
     // spilled popcorn when an agent is blocked or one crashed

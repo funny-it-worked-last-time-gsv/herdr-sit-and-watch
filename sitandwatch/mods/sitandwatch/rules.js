@@ -76,3 +76,33 @@ export function effectiveMood(list, m, dev, ship) {
   const mood = ship != null || !m ? "normal" : dev?.mood && !busyOneShot ? dev.mood : resolveMood(m, level);
   return { level, mood };
 }
+
+// ---- the pets ---------------------------------------------------------------------
+// One pose for each of Buddy (the beagle), Snowy (first cat) and Simba (second cat).
+// st: { present (he's in the chair), ship (an explosion is running), mood, spilled (his popcorn
+// is on the floor), knock (his can is due off the armrest), ovation (he's standing), night }.
+// Whether a pet is there at all comes first: at night Simba is out, and Snowy does the knocking.
+// Then the loudest thing wins: ship > meltdown > spill > knock > ovation > disappointed.
+export function petPoses(st) {
+  if (!st.present) return { buddy: "curl", snowy: "curl", simba: "curl" };
+  const out = { buddy: "sit", snowy: "sit", simba: st.night ? "gone" : "sit" };
+  const knocker = st.night ? "snowy" : "simba";
+  if (st.ship) out.buddy = "howl";
+  else if (st.mood === "allBlocked") out.buddy = "paw";
+  else if (st.spilled) out.buddy = "eat";
+  else if (st.knock) out[knocker] = "knock";
+  else if (st.ovation) { out.snowy = "back"; if (out.simba !== "gone") out.simba = "back"; }
+  return out;
+}
+
+// Developer mode's pet scenes: each forces the state that would show it.
+export const PET_SCENES = {
+  asleep: { present: false },
+  sit: { present: true },
+  ovation: { present: true, ovation: true },
+  meltdown: { present: true, mood: "allBlocked" },
+  ship: { present: true, ship: true },
+  spill: { present: true, spilled: true },
+  knock: { present: true, knock: true },
+  night: { present: true, night: true },
+};
