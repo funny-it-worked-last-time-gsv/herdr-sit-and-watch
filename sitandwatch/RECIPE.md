@@ -64,7 +64,7 @@ widening, eyes bulging with the head thrown back.
   `IT'S LIVE!`, `LEGENDS`.
 ### Moods
 
-On top of the level, `resolveMood(m, level)` in `panel.js` picks one dominant mood, first match
+On top of the level, `resolveMood(m, level)` in `rules.js` picks one dominant mood, first match
 wins, and `spectator()` draws that one pose and speech set. `m` comes from `trackMetrics()` in
 `main.js` (or a demo state):
 
@@ -149,8 +149,11 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   dock it; the install puts it in the bottom-left corner unless the person asks otherwise: a block
   `{ "id": "sitandwatch", "type": "block", "content": { "mod": "sitandwatch" }, "size": { "px": 300 } }`
   in the layout's `sidebar` column, just before `sidebar-footer` (clone a shipped layout first).
-- `mods/sitandwatch/panel.js`: the panel (`panel(list, party, opts)`), desks, `devLevel(list)` and
-  `resolveMood(m, level)`.
+- `mods/sitandwatch/panel.js`: the panel (`panel(list, party, opts)`), desks, the dev strip, the strip and rail.
+- `mods/sitandwatch/rules.js`: every decision, no imports: `devLevel`, `resolveMood`, `effectiveMood`, the
+  `ONE_SHOT` table and `startOneShot`, `petPoses`, options, the power meter, desk order and cobwebs,
+  `findBlock` for minimise, the can and the popcorn.
+- `mods/sitandwatch/options.js`: the Options dialog. `lines.js`: everything he and the pets say.
 - `mods/sitandwatch/lines.js`: what he says, `pool()` and `pickLine()`.
 - `mods/sitandwatch/art.js`: sprites as rows of palette letters (`sprite(rows, palette, s)` draws one
   `div` per colour run), `bot()` from plain rectangles, `spectator(level, s, id, { panic, party, ship, mood, fx, ... })`,
@@ -181,6 +184,21 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   move a pet that's already on its next trip.
 - Only a pet sitting or with its back turned wanders; a reaction (howl, paw, eat, knock) keeps it put.
 - Dev: `wander` in the pets row, or `herdr-app do sitandwatch.wander`, sends them all off now.
+
+## The can, the popcorn, clicking a pet
+
+- The can: `canKnock(longestWorkingMs, level)` (over 10 min, level 2+) makes `petPoses` give the knocker
+  (Simba; Snowy at night or with Simba off) `knock` on the right armrest, or `knockBack` on the chair back
+  once the pillow has the armrest (glazed 30 min+). `panel()` reports what it drew (`onDrawn`); the 1s
+  tick starts the push only once a knocking cat is drawn: `canStage` 0 (paw on the can), 800ms later 1
+  (the can on the floor, `pet-can-down`, and gone from the armrest). A louder pose (POWER!, a ship, the
+  meltdown, the spill) hides the knock and resets it; it replays after.
+- The popcorn: while his popcorn is spilled (`stance().spilled`), `spillTicks` counts up; `pileSize()` is
+  2 under 30 ticks, 1 under 60, then 0. Both his spill under the chair and Buddy's kernels shrink.
+- Clicking a pet: each pet has its own click (after his poke target, so a pet asleep on the chair can
+  be clicked; it stops propagation). `pokePet()`: the `petPoke` one-shot (2 ticks) and `m.petSay`
+  `{ name, line }`, a line from `lines.js` `cat` / `beagle`, or `asleep` while it's curled up; a bubble
+  `"<name>: <line>"` over the pet. Dev: the `petPoke` and `canKnock` (20s) fire chips.
 
 ## The power bar
 

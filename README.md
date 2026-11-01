@@ -13,7 +13,7 @@ work. The more of them are working, the more excited you get. See
 
 | Agents working | In the chair |
 | --- | --- |
-| None | Nobody. An empty chair and a bucket of popcorn. |
+| None | Nobody. An empty chair: Snowy asleep on the back, Buddy on the seat, Simba on the armrest, his popcorn on the floor. |
 | One | Popcorn, a foam finger, eyebrows creeping up. "ooh" |
 | Two or three | Clapping, wide eyes, sweating. "go on son!" |
 | Four or more (or all of them) | Standing ovation, bulging eyes, confetti. "SHIP IT!" |
@@ -36,6 +36,10 @@ work. The more of them are working, the more excited you get. See
 | 10+ agents seen this session | Eyes darting about. "how many are there?" |
 | The power bar fills | The bar in the header fills with every second an agent works (20 agent-minutes: about 7 with three at it) and drains slowly when nothing runs. Full: he leaps up, "POWER!", confetti, the pets wide awake. Then it starts again. |
 | Desks | In last-active order: whoever's working first, then the one that stopped most recently. A desk left alone for an hour gets a cobweb; after 8 hours it's covered, screen dusty. |
+| The pets, any time he's there | Buddy, Snowy and Simba sit by the chair giving him a half-lidded side-eye. Meltdown: Buddy covers his eyes. Standing ovation: the cats turn their backs. Something ships: Buddy howls. After 10pm Simba's out. The loudest moment wins. |
+| One crashed or needs you (popcorn spilled) | Buddy goes for the popcorn and eats it down over a minute. |
+| Two or more at it for 10+ minutes | A cat knocks his can off the armrest (from the chair back once the pillow's there). |
+| You click a pet | It says what it thinks of him: "Simba: pathetic", "Buddy: walk?", "Snowy: zzz" if you woke her. |
 | Agents busy (now and then) | One of the pets gets up and wanders off the edge, back 25-75s later: Buddy out the left, Snowy and Simba out the right. Never while nothing is running. |
 | Something shipped | Explosion with a PR MERGED, DEPLOYED or IT'S LIVE banner, bigger the first time. "KABOOM!" (needs the Claude Code hook, see below) |
 

@@ -160,9 +160,15 @@ export function panel(list, party = false, opts = {}) {
   // The pets react to what he's doing; developer mode can force a scene; Options can send one away.
   const st = stance(level, him);
   const hide = Object.fromEntries(Object.entries(o.pets).map(([k, on]) => [k, !on]));
-  const real = { present: st.present, ship: ship != null, mood, spilled: st.spilled, knock: false, ovation: st.L === 3, night: him.night };
+  const real = { present: st.present, ship: ship != null, mood, spilled: st.spilled, knock: !!opts.knock, pillow: st.depth >= 2, ovation: st.L === 3, night: him.night };
   const poses = petPoses({ ...(dev?.pets ? PET_SCENES[dev.pets] : real), hide });
   for (const [k, name] of [["buddy", "Buddy"], ["snowy", "Snowy"], ["simba", "Simba"]]) if (hide[name]) poses[k] = "gone";
+  // The knock plays in two stages once it's actually drawn (main.js starts the second); tell main.js what
+  // was drawn: whether a cat is knocking, and whether his popcorn is on the floor (the pile shrinks).
+  const knocking = [poses.snowy, poses.simba].some((p) => p === "knock" || p === "knockBack");
+  const canDown = knocking && (opts.canStage === 1 || dev?.pets === "knock");
+  opts.onDrawn?.({ knocking, spilled: st.spilled, poses });
+  const petMore = { onPet: opts.onPet, poke: (m?.fx?.petPoke ?? 0) > 0 ? opts.petPoke : null, canDown, pile: opts.pile ?? 2 };
   // Nothing here depends on the panel's measured size: flex does all the fitting,
   // so resizing the column never needs a re-render.
   return v_flex().id("saw-panel").size_full().overflow_hidden().bg(FLOORS[o.floor].color)
@@ -188,11 +194,12 @@ export function panel(list, party = false, opts = {}) {
       .child(div().relative().w(devW).h(cornerH)
         .child(r(-12, cornerH - 16, devW + 24, 10, "#5e1420"))
         .child(r(devW + 10, 16, 3, devH - 6, "#3a3a3a")).child(r(devW + 3, 4, 17, 13, "#d97a3a"))
-        .child(spectator(level, ds, "pdev", { ...him, canDown: poses.snowy === "knock" || poses.simba === "knock" }).absolute().left(0).top(16))
-        // Buddy, Snowy and Simba: asleep on the chair when he's not in it, else reacting to him
-        .children(pets(poses, cornerH, ds, "pet", opts.walk ?? {}))
-        // clicking him: on top of the drawing, so the pixels can't swallow it
+        .child(spectator(level, ds, "pdev", { ...him, canDown, pile: opts.pile ?? 2 }).absolute().left(0).top(16))
+        // clicking him: on top of his drawing, so the pixels can't swallow it
         .child(div().id("saw-dev").absolute().left(0).top(16).w(devW).h(devH).cursor_pointer()
           .when(!!opts.onDev, (e) => e.on_click((_e, cx) => opts.onDev(cx))))
+        // Buddy, Snowy and Simba: asleep on the chair when he's not in it, else reacting to him; above his
+        // click target, so a pet asleep on the chair can be clicked too
+        .children(pets(poses, cornerH, ds, "pet", opts.walk ?? {}, petMore))
         .when(ship != null, (e) => e.child(explosion(ship, devW / 2, cornerH / 2, `boom-${opts.shipKey ?? 0}`, !!opts.firstShip, opts.banner)))));
 }

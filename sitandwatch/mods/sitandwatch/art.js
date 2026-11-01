@@ -291,15 +291,22 @@ function outlined(rows) {
 // "in1" sliding back. Only a pet sitting (or with its back turned) wanders; a reaction keeps it put.
 export const WALK_MS = 1800;
 const HOME = { Buddy: -44, Snowy: 100, Simba: 132 }, EXIT = { Buddy: -120, Snowy: 210, Simba: 210 };
-export function pets(poses, cornerH, s, id, walk = {}) {
+// more: { onPet(name, cx) click handler, poke: { name, line } the bubble to show, canDown (the can is on
+// the floor: the knock's second stage), pile (popcorn left while Buddy eats: 2, 1, 0) }.
+export function pets(poses, cornerH, s, id, walk = {}, more = {}) {
   const [buddy, snowy, simba] = PETS;
   const floor = cornerH - 8;                               // their feet, on the rug
   const seat = 16 + 17 * 3, back = 16 + 3 * 3, arm = 16 + 9 * 3;   // chair seat, back and armrest tops
+  const spots = {};                                        // where each pet was drawn, for its bubble
+  const click = (el, p) => more.onPet ? el.cursor_pointer()
+    .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+    .on_click((_e, cx) => { cx.stop_propagation(); more.onPet(p.name, cx); }) : el;
   const at = (x, bottom, p, pose, left = false) => {
     const phase = (pose === "sit" || pose === "back") && walk[p.name];
     const edge = pose === "curl" || pose === "eat";       // outlined: over the chair, or low on the floor
     const h = (POSE[p.kind][pose].length + (edge ? 2 : 0)) * s;
-    if (!phase) return div().absolute().left(x - (edge ? s : 0)).top(bottom - h + (edge ? s : 0)).child(pet(p, pose, s, left, edge)).id(`${id}-${p.name}-${pose}`);
+    if (!phase) spots[p.name] = { x, top: bottom - h };
+    if (!phase) return click(div().absolute().left(x - (edge ? s : 0)).top(bottom - h + (edge ? s : 0)).child(pet(p, pose, s, left, edge)).id(`${id}-${p.name}-${pose}`), p);
     if (phase === "away") return null;
     // Walking: one id from start to end, so changing left slides it; a little bob for the steps.
     const going = phase === "out0" || phase === "out1", gone = phase === "out1" || phase === "in0";
@@ -318,7 +325,8 @@ export function pets(poses, cornerH, s, id, walk = {}) {
   else if (b === "curl") { out.push(at(8, seat + 4, buddy, "curl")); z(30, seat - 20, "Buddy"); }
   else if (b === "eat") {                                    // at his spot, nose in the popcorn he dragged over
     out.push(at(-52, floor, buddy, "eat"));
-    for (const [x, y] of [[-6, 4], [-2, 7], [-9, 8], [1, 3]]) out.push(r(x, floor - y - 3, 3, 3, "#fff6c8"));
+    const left = [1, 2, 4][more.pile ?? 2];                  // fewer kernels as he eats them
+    for (const [x, y] of [[-6, 4], [-2, 7], [-9, 8], [1, 3]].slice(0, left)) out.push(r(x, floor - y - 3, 3, 3, "#fff6c8"));
   }
   else out.push(at(-44, floor, buddy, b));
   if (b === "howl" && b !== "gone") out.push(div().absolute().left(-48).top(floor - 13 * s - 16).id(`${id}-awoo`)
@@ -331,13 +339,17 @@ export function pets(poses, cornerH, s, id, walk = {}) {
       else { out.push(at(60, arm + 2, p, "curl", true)); z(88, arm - 20, p.name); }          // Simba on the right armrest
     }
     else if (pose === "knock") out.push(at(56, arm + 2, p, "sit", true));
+    else if (pose === "knockBack") out.push(at(26, back + 2, p, "sit", true));   // the pillow has the armrest
     else out.push(at(spot === 0 ? 100 : 132, floor, p, pose, pose !== "back"));
   };
   cat(snowy, poses.snowy, 0);
   cat(simba, poses.simba, 1);
-  // the can it pushed off, on the floor under the armrest
-  if (poses.snowy === "knock" || poses.simba === "knock")
-    out.push(r(66, floor - 9, 12, 9, "#c0c6cf").child(r(3, 0, 6, 9, "#c9302c")).id(`${id}-can-down`));
+  // the can it pushed off, on the floor under the armrest (the knock's second stage)
+  if (more.canDown) out.push(r(66, floor - 9, 12, 9, "#c0c6cf").child(r(3, 0, 6, 9, "#c9302c")).id(`${id}-can-down`));
+  // a clicked pet's bubble: "<name>: <line>", over where it's drawn
+  const sp = more.poke && spots[more.poke.name];
+  if (sp) out.push(div().absolute().left(Math.min(Math.max(sp.x - 20, -90), 60)).top(sp.top - 18).px(3).bg("#ffffff").border(1).border_color(ink)
+    .id(`${id}-say-${more.poke.name}`).child(txt(`${more.poke.name}: ${more.poke.line}`, 10, ink)));
   return out.filter(Boolean);
 }
 
@@ -687,7 +699,7 @@ export function spectator(level, s, id, opts) {
     .child(shaker)
     // spilled popcorn when an agent is blocked or one crashed
     .when(spilled, (e) => e.child(R(19, 26, 5, 3, "#f4f4f0")).child(R(20, 26, 1, 3, "#c9302c")).child(R(22, 26, 1, 3, "#c9302c"))
-      .children([[14, 28], [16, 29], [24, 28], [12, 29], [26, 29]].map(([x, y]) => R(x, y, 1, 1, "#fff6c8"))))
+      .children([[14, 28], [16, 29], [24, 28], [12, 29], [26, 29]].slice(0, [1, 3, 5][o.pile ?? 2]).map(([x, y]) => R(x, y, 1, 1, "#fff6c8"))))
     // everything blocked: popcorn everywhere, two tears dripping off his face
     .when(melt, (e) => e.children([[-3, 28], [1, 29], [6, 28], [9, 29], [28, 28], [30, 29], [-1, 26]].map(([x, y]) => R(x, y, 1, 1, "#fff6c8")))
       .children([9, 15].map((x, i) => R(x, 6, 1, 2, "#7fc4ff").id(`${id}-melt-tear${i}`).loop("top", { from: 6 * s, to: 12 * s, period: 800 + i * 300, easing: "linear" }))))

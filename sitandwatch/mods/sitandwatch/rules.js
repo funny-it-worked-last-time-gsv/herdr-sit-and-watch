@@ -23,11 +23,12 @@ export const ONE_SHOT = {
   linger: { chip: "linger", ticks: 2, takesOver: false },
   poke: { chip: "poke", ticks: 2, takesOver: false },
   powerUp: { chip: "power", ticks: 4, takesOver: true },
+  petPoke: { chip: "petPoke", ticks: 2, takesOver: false },   // a pet was clicked: its bubble
 };
 export const ONE_SHOTS = Object.keys(ONE_SHOT);
 export const TAKES_OVER = ONE_SHOTS.filter((k) => ONE_SHOT[k].takesOver);
 // Dev "fire" buttons: every one-shot, then the events that aren't one-shots.
-export const DEV_FIRE = [...ONE_SHOTS.map((k) => ONE_SHOT[k].chip), "chaos", "pushed", "merged", "deployed"];
+export const DEV_FIRE = [...ONE_SHOTS.map((k) => ONE_SHOT[k].chip), "chaos", "pushed", "merged", "deployed", "canKnock"];
 export const CHIP_KEY = Object.fromEntries(ONE_SHOTS.map((k) => [ONE_SHOT[k].chip, k]));
 
 // Start a one-shot. Every start goes through here; a trigger that lasts a different time from
@@ -94,7 +95,7 @@ export function petPoses(st) {
   else if (st.mood === "power") { /* POWER!: all awake and staring at him */ }
   else if (st.mood === "allBlocked") out.buddy = "paw";
   else if (st.spilled) out.buddy = "eat";
-  else if (st.knock) out[knocker] = "knock";
+  else if (st.knock) out[knocker] = st.pillow ? "knockBack" : "knock";   // the pillow has the armrest: up on the chair back
   else if (st.ovation) { out.snowy = "back"; if (out.simba !== "gone") out.simba = "back"; }
   return out;
 }
@@ -128,7 +129,7 @@ export function readOptions(raw) {
   const o = raw && typeof raw === "object" ? raw : {};
   const pets = o.pets && typeof o.pets === "object" ? o.pets : {};
   return {
-    floor: FLOORS[o.floor] ? o.floor : DEFAULT_OPTIONS.floor,
+    floor: Object.hasOwn(FLOORS, o.floor) ? o.floor : DEFAULT_OPTIONS.floor,   // own keys only: not "toString"
     pets: Object.fromEntries(Object.keys(DEFAULT_OPTIONS.pets).map((k) => [k, pets[k] !== false])),
     speech: o.speech !== false,
     chaos: o.chaos === true,
@@ -202,3 +203,11 @@ export const MIN_TROUBLE = {
   min: "Herdr won't shrink me: lower my block's min to 30",
   failed: "Herdr refused to resize me",
 };
+
+// ---- the can and the popcorn -----------------------------------------------------
+// His can goes off the armrest once an agent has worked over 10 minutes with two or more at it (the
+// can is only there from level 2); it stays down while that holds.
+export const KNOCK_AFTER = 10 * MIN;
+export const canKnock = (longestWorkingMs, level) => longestWorkingMs > KNOCK_AFTER && level >= 2;
+// Spilled popcorn shrinks while Buddy eats it: 2 full (under 30s), 1 half (under 60s), 0 crumbs.
+export const pileSize = (ticks) => (ticks < 30 ? 2 : ticks < 60 ? 1 : 0);

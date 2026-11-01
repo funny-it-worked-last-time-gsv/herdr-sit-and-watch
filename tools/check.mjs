@@ -27,6 +27,8 @@ registerHooks({
 
 const S = await import(STUBS);
 const { default: Office } = await import(pathToFileURL(join(MOD, "main.js")).href);
+const { LINES } = await import(pathToFileURL(join(MOD, "lines.js")).href);
+const LINES_OF = (k) => LINES[k] ?? [];
 const { clock, world, makeCx, reseed, texts, ids, count, walk, sendCommand } = S;
 
 // Intended differences from the golden (new features), and the element budget headroom.
@@ -850,6 +852,74 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   const tr = render(w, ["working"]);
   if (!ids(tr).includes("saw-rail") || JSON.stringify(world.runs.at(-1)) !== JSON.stringify(["layout.resize", { id: "sitandwatch", px: 40 }])) fails.push("min: docked in a row it should be a 40px rail");
   for (const t of [ts, tr]) noErr(t, "min");
+}
+
+{ // Value: protects=readOptions() taking only real floor names (own keys), not Object.prototype ones; fails_when=the lookup
+  // goes back to FLOORS[o.floor]; why_new=the options block found it but couldn't change rules.js; seam=none; no_claim=none beyond protects
+  const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
+  for (const bad of ["toString", "constructor", "__proto__", "hasOwnProperty"]) if (R.readOptions({ floor: bad }).floor !== "slate") fails.push(`options: floor "${bad}" should fall back to slate`);
+}
+
+// ---- the can, the popcorn, clicking a pet ------------------------------------------
+{
+  // Value: protects=the real can-knock (10+ min of work at level 2+), its two stages only once a knocking cat is drawn (not
+  // under POWER!), the chair back when the pillow has the armrest, the popcorn pile shrinking over a minute, and a clicked
+  // pet's named bubble (asleep lines when curled), above his click target; fails_when=any of those rules breaks;
+  // why_new=nothing else drives these; seam=none; no_claim=Herdr's real click routing (recorded handlers, fake clock)
+  const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
+  if (R.canKnock(10 * MIN, 2) || !R.canKnock(10 * MIN + 1, 2) || R.canKnock(11 * MIN, 1)) fails.push("can: knock after 10 min of work, from level 2");
+  if ([0, 29, 30, 59, 60].map(R.pileSize).join("") !== "22110") fails.push(`popcorn: pile 2 under 30 ticks, 1 under 60, then 0, got ${[0, 29, 30, 59, 60].map(R.pileSize)}`);
+  const leftOf = (t, id) => { let x = null; walk(t, (e) => { if (e.idv === id) x = e.calls.find(([k]) => k === "left")?.[1][0]; }); return x; };
+
+  // Two at it for 11 minutes: Simba knocks (stage 0: can still up), 800ms later it's down.
+  const { o } = mount();
+  render(o, ["working", "working", "idle"]); jump(11 * MIN);
+  let t = render(o, ["working", "working", "idle"]);
+  if (!ids(t).includes("pet-Simba-sit") || ids(t).includes("pet-can-down") || leftOf(t, "pet-Simba-sit") !== 56) fails.push(`can: after 11 min Simba should be up on the armrest, can not yet down; at ${leftOf(t, "pet-Simba-sit")}`);
+  S.advance(1000); if (o.m.canStage !== 0) fails.push(`can: the push should start once the knock is drawn, stage=${o.m.canStage}`);
+  S.advance(800); t = render(o, ["working", "working", "idle"]);
+  if (o.m.canStage !== 1 || !ids(t).includes("pet-can-down")) fails.push(`can: 800ms later the can should be on the floor, stage=${o.m.canStage}`);
+  // POWER! hides the knock: the push resets and replays after.
+  o.m.powerUp = 4; t = render(o, ["working", "working", "idle"]); S.advance(1000);
+  if (o.m.canStage != null || ids(t).includes("pet-can-down")) fails.push(`can: under POWER! the knock isn't drawn and resets, stage=${o.m.canStage}`);
+  // 30+ min: the pillow has the armrest, so the knocker is on the chair back.
+  o.m.powerUp = 0; jump(20 * MIN); t = render(o, ["working", "working", "idle"]);
+  if (leftOf(t, "pet-Simba-sit") !== 26) fails.push(`can: with the pillow the knocker should be on the chair back (26), got ${leftOf(t, "pet-Simba-sit")}`);
+  // Level 1: no can, no knock.
+  t = render(o, ["working", "idle", "idle"]); S.advance(1000);
+  if (o.m.canStage != null || ids(t).includes("pet-can-down")) fails.push("can: below level 2 there's no knock");
+  noErr(t, "can");
+
+  // Popcorn: an agent blocked spills it; Buddy eats it down over a minute.
+  const { o: p } = mount();
+  // Buddy's kernels sit left of the chair (x < 10), his spill under it; count them apart.
+  const kernels = (tr) => { let buddy = 0, his = 0; walk(tr, (e) => { if (e.calls.some(([k, a]) => k === "bg" && a[0] === "#fff6c8")) { const x = e.calls.find(([k]) => k === "left")?.[1][0] ?? 99; if (x < 10) buddy++; else his++; } }); return [buddy, his]; };
+  render(p, ["working", "blocked"]); S.advance(1000);
+  const full = kernels(render(p, ["working", "blocked"]));
+  for (let i = 0; i < 35; i++) { S.advance(1000); render(p, ["working", "blocked"]); }
+  const half = kernels(render(p, ["working", "blocked"]));
+  for (let i = 0; i < 30; i++) { S.advance(1000); render(p, ["working", "blocked"]); }
+  const crumbs = kernels(render(p, ["working", "blocked"]));
+  for (const i of [0, 1]) if (!(full[i] > half[i] && half[i] > crumbs[i] && crumbs[i] > 0)) fails.push(`popcorn: ${i ? "his spill" : "Buddy's pile"} should shrink, ${full[i]} > ${half[i]} > ${crumbs[i]} > 0`);
+  render(p, ["working", "idle"]); S.advance(1000);
+  if (p.m.spillTicks !== 0) fails.push("popcorn: cleared up when nothing's spilled");
+
+  // Clicking a pet: its bubble, named, for two ticks; stops before his poke; asleep lines when curled.
+  const { o: c } = mount();
+  const handler = (tr, id) => { let h = null; walk(tr, (e) => { if (e.idv === id) h = e.handlers.on_click; }); return h; };
+  let tc = render(c, ["working"]);
+  const ccx = makeCx(); handler(tc, "pet-Buddy-sit")?.({}, ccx);
+  tc = render(c, ["working"]);
+  const bubble = texts(tc).find((x) => x.startsWith("Buddy: ")) ?? "";
+  if (!ccx.stopped || !ids(tc).includes("pet-say-Buddy") || !LINES_OF("beagle").includes(bubble.slice(7))) fails.push(`pets: clicking Buddy should show "Buddy: <a beagle line>" and stop the click, got "${bubble}"`);
+  if (c.m.poke) fails.push("pets: clicking a pet shouldn't poke him");
+  S.advance(2000); if (ids(render(c, ["working"])).includes("pet-say-Buddy")) fails.push("pets: the bubble should go after two ticks");
+  tc = render(c, ["idle"]); handler(tc, "pet-Snowy-curl")?.({}, makeCx());
+  const sleepy = texts(render(c, ["idle"])).find((x) => x.startsWith("Snowy: ")) ?? "";
+  if (!LINES_OF("asleep").includes(sleepy.slice(7))) fails.push(`pets: a sleeping pet should answer with an asleep line, got "${sleepy}"`);
+  c.fire("petPoke", makeCx());
+  if (!(c.m.petSay?.name && c.m.petSay?.line) || !(c.m.petPoke > 0)) fails.push("pets: the dev petPoke chip should poke a pet");
+  noErr(tc, "pet click");
 }
 
 const budget = g.budget.max + BUDGET_HEADROOM, over = snap.demo.counts.map((n, i) => [i + 1, n]).filter(([, n]) => n > budget);
