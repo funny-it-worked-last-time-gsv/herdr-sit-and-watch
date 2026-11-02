@@ -117,6 +117,8 @@ installed and switched on, every name Sit & Watch draws follows them: a renamed 
 (`football-shares-frontend` as `FS-fe`), a hidden one its stand-in (`Space 2`, or the program's name for a tab).
 Off, or not installed, names show as they are. `privacy.js` is screenshot mode's own file, copied in unchanged.
 
+The [Sit & Watch layout](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch-layout) has both set up together in one window, ready to switch to.
+
 ### Developer mode
 
 `herdr-app do sitandwatch.dev` adds a strip under the header with the numbers the mood is picked
