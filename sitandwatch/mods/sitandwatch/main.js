@@ -2,7 +2,7 @@ import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { agents, hc, nextCommand, spaces, panes, props, run, setAgentOrder, knownAgents, layout, notify } from "herdr";
 import { options, setOption, optionsDialog, openOptions } from "./options.js";
-import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H, PETS, WALK_MS, BIRDS, FLY_MS } from "./art.js";
+import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H, PETS, WALK_MS, BIRDS, FLY_MS, birdDesk } from "./art.js";
 import { LINES } from "./lines.js";
 import { panel } from "./panel.js";
 import { spaceLabel, tabLabel, tabName } from "./names.js";
@@ -497,18 +497,21 @@ export default class Office extends View {
     BIRDS.forEach((p, i) => {
       const b = (B[p.name] ??= { perch: i ? "chairR" : "chairL", next: later() });
       if (!active || !["sit", "flap"].includes(poses[p.name.toLowerCase()])) return;
-      const lost = isPet(b.perch) && !home(b.perch);
+      const desk = birdDesk(b.perch);
+      const lost = (isPet(b.perch) && !home(b.perch)) || (desk != null && !this.list.some((a) => a.address === desk && a.status === "working"));
       if (!force && !lost && now < b.next) return;
       const taken = BIRDS.filter((q) => q !== p).map((q) => B[q.name]?.perch);
-      const open = ["chairL", "chairR", "Buddy", "Snowy", "Simba"]   // not the lamp: his bubble's there
+      const open = ["chairL", "chairR", "Buddy", "Snowy", "Simba", ...this.list.filter((a) => a.status === "working").map((a) => `desk:${a.address}`)]   // not the lamp: his bubble's there
         .filter((k) => k !== b.perch && !taken.includes(k) && (!isPet(k) || home(k)));
       let to = nextPerch(p.name, b.perch, open);
       if (!open.includes(to)) to = lost ? (open[0] ?? b.perch) : b.perch;   // a bad answer stays put
       b.next = later();
       if (to === b.perch) return;
-      const key = Math.random();
-      Object.assign(b, { perch: to, flying: true, key });
-      cx.timer.after(FLY_MS + 50, (cx) => { if (b.key === key) { b.flying = false; cx.notify(); } });
+      // to a computer: up out of the corner, then on the desk; back from one: down from up there
+      const key = Math.random(), from = b.perch, up = birdDesk(to) != null && birdDesk(from) == null, down = birdDesk(from) != null && birdDesk(to) == null;
+      Object.assign(b, { perch: to, from, flying: true, key, leg: up ? "up" : down ? "down" : null });
+      if (down) cx.timer.after(60, (cx) => { if (b.key === key) { b.leg = null; cx.notify(); } });
+      cx.timer.after(FLY_MS + 50 + (down ? 60 : 0), (cx) => { if (b.key === key) { Object.assign(b, { flying: false, leg: null }); cx.notify(); } });
       cx.notify();
     });
   }

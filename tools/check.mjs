@@ -333,6 +333,26 @@ const OPT = await import(pathToFileURL(join(MOD, "options.js")).href);
   const perchOf = (tree, n) => tree && S.findId(tree, (x) => x === `pet-${n}-bird`)?.calls.find(([k]) => k === "left")?.[1][0];
   const asleep = render(mount().o, LISTS.idle3);
   if (perchOf(asleep, "Jin-Bao") !== 76 || perchOf(asleep, "Jow-Shy") !== 90) fails.push(`birds asleep: should be on the lamp (76, 90), were ${perchOf(asleep, "Jin-Bao")}, ${perchOf(asleep, "Jow-Shy")}`);
+  { // drawn behind him (his hands, head and bubble in front), with a click box over a chair-back bird
+    const t = render(mount().o, LISTS.w1), order = ids(t);
+    const first = (re) => order.findIndex((x) => re.test(x));
+    if (!(first(/^pet-Jin-Bao-bird$/) >= 0 && first(/^pet-Jin-Bao-bird$/) < first(/^pdev-/))) fails.push(`birds: should be drawn before him, order ${first(/^pet-Jin-Bao-bird$/)} vs ${first(/^pdev-/)}`);
+    if (!order.includes("pet-Jin-Bao-hit") || first(/^pet-Jin-Bao-hit$/) < first(/^saw-dev$/)) fails.push("birds: a chair-back bird needs its click box above his click target");
+  }
+  { // on a computer: drawn by that desk, in the corner only while flying up to it, off again when it stops working
+    const { o, cx } = mount(); render(o, LISTS.w2i1);
+    const addr = o.list.find((a) => a.status === "working").address;
+    (o.birds ??= {})["Jin-Bao"] = { perch: `desk:${addr}`, from: "chairL", leg: "up", flying: true, next: Date.now() + 10 * MIN };
+    const up = render(o, LISTS.w2i1), top = S.findId(up, (x) => x === "pet-Jin-Bao-bird")?.calls.find(([k]) => k === "top")?.[1][0];
+    if (top == null || top > A.BIRD_SKY) fails.push(`birds desk: flying up, Jin-Bao should be up at ${A.BIRD_SKY} over the corner, was ${top}`);
+    Object.assign(o.birds["Jin-Bao"], { leg: null, flying: false });
+    const on = render(o, LISTS.w2i1), deskEl = S.findId(on, (x) => x === `pd-${addr}`);
+    if (!deskEl || !ids(deskEl).includes("pet-Jin-Bao-desk") || ids(on).includes("pet-Jin-Bao-bird")) fails.push(`birds desk: Jin-Bao should be drawn on desk ${addr} only, saw ${ids(on).filter((x) => x.startsWith("pet-Jin"))}`);
+    noErr(on, "birds desk");
+    const idleNow = LISTS.w2i1.map(() => "idle"); idleNow[1] = "working";   // its agent stops, another still works
+    render(o, idleNow); o.birdTick(cx);
+    if (o.list.find((a) => a.address === addr)?.status !== "working" && A.birdDesk(o.birds["Jin-Bao"].perch) === addr) fails.push("birds desk: Jin-Bao stayed on a computer that stopped working");
+  }
   { // idle: they never move
     const { o } = mount(); render(o, LISTS.idle3);
     for (let i = 0; i < 600; i++) { S.advance(1000); render(o, LISTS.idle3); }

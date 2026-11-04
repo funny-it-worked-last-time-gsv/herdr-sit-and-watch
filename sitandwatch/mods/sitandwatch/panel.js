@@ -1,7 +1,7 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run } from "herdr";
-import { ink, SCREEN, r, txt, look, bot, spectator, stance, pets, explosion, miniFace, DEV_W, DEV_H, hash } from "./art.js";
+import { ink, SCREEN, r, txt, look, bot, spectator, stance, pets, explosion, miniFace, DEV_W, DEV_H, hash, BIRDS, birdDesk, deskBird } from "./art.js";
 import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES, FLOORS, cobwebLevel, DESK_AGES, sinceLabel, POWER_FULL, POWER_STEPS, powerShown, headcount, deskOf, logFrames } from "./rules.js";
 import { deskName, tabName } from "./names.js";
 import { options, openOptions } from "./options.js";
@@ -85,7 +85,8 @@ function cobwebs(sw, level, addr) {
   return out;
 }
 
-function desk(a, x, y, sw, rh, mark = null, idleMs = 0, say = null) {
+// bird: { p, pose, onPet } a bird sitting on this computer (see deskBird() in art.js)
+function desk(a, x, y, sw, rh, mark = null, idleMs = 0, say = null, bird = null) {
   // working: a little log scrolls on the screen (tool names, then details), two text elements
   const log = logFrames(hash(a.address) % 7);
   const scr = r(Math.round(sw / 2) - 16, 4, 32, 20, "#2b2f3a").child(r(2, 2, 28, 16, SCREEN[a.status] ?? SCREEN.idle).overflow_hidden()
@@ -104,6 +105,7 @@ function desk(a, x, y, sw, rh, mark = null, idleMs = 0, say = null) {
     .child(r(Math.round(sw / 2) - 26, 27, 52, 10, "#f0dcb0").border_b(4).border_color("#d4b27c"))   // top and front: one element
     .child(div().absolute().left(Math.round(sw / 2) - 12).top(28).child(body))
     .children(cobwebs(sw, cobwebLevel(idleMs), a.address))
+    .when(!!bird, (e) => e.child(deskBird(bird.p, bird.pose, sw, "pet", bird.onPet)))
     // its Claude Code sub-agents: done/total on a tag at the desk's corner (2/5: five ran, two finished)
     .when(!!a.subs, (e) => e.child(div().id(`psub-${a.address}`).absolute().left(Math.round(sw / 2) + 14).top(20).px(2).bg("#2b2f3a")
       .child(txt(`${a.subs.done}/${a.subs.total}`, 10, a.subs.running ? "#ffd86a" : "#9fe0a0"))))
@@ -185,6 +187,12 @@ export function panel(list, party = false, opts = {}) {
   const knocking = [poses.snowy, poses.simba].some((p) => p === "knock" || p === "knockBack");
   const canDown = knocking && (opts.canStage === 1 || dev?.pets === "knock");
   opts.onDrawn?.({ knocking, spilled: st.spilled, poses });
+  // birds sitting on a computer (perch "desk:<address>"), awake and not mid-flight: drawn by that desk
+  const onDesk = {};
+  for (const p of BIRDS) {
+    const b = opts.birds?.[p.name], pose = poses[p.name.toLowerCase()], at = birdDesk(b?.perch);
+    if (at && !b.leg && opts.zoom?.name !== p.name && (pose === "sit" || pose === "flap")) onDesk[at] ??= { p, pose, onPet: opts.onPet };
+  }
   const petMore = { onPet: opts.onPet, poke: (m?.fx?.petPoke ?? 0) > 0 ? opts.petPoke : null, canDown, pile: opts.pile ?? 2, birds: opts.birds, zoom: opts.zoom, present: st.present };
   // Nothing here depends on the panel's measured size: flex does all the fitting,
   // so resizing the column never needs a re-render.
@@ -207,17 +215,19 @@ export function panel(list, party = false, opts = {}) {
     .when(!!dev, (e) => e.child(devStrip(dev, mood, level, m, opts.power ?? 0)))
     .child(div().id("saw-desks").flex().flex_wrap().justify_center().content_start().flex_1().w_full().overflow_hidden().pt(6)
       .children(list.map((a) => desk(a, 0, 0, sw, rh, a.address === markAddr ? mood : null, opts.idle?.[a.address] ?? 0,
-        opts.say?.address === a.address ? opts.say.text : null))))
+        opts.say?.address === a.address ? opts.say.text : null, onDesk[a.address] ?? null))))
     .child(div().flex().justify_center().w_full().h(cornerH).flex_none().bg(glow)
       .child(div().relative().w(devW).h(cornerH)
         .child(r(-12, cornerH - 16, devW + 24, 10, "#5e1420"))
         .child(r(devW + 10, 16, 3, devH - 6, "#3a3a3a")).child(r(devW + 3, 4, 17, 13, "#d97a3a"))
+        // the perched birds behind him: his hands, head and speech bubble stay in front
+        .children(pets(poses, cornerH, ds, "pet", opts.walk ?? {}, { ...petMore, layer: "back" }))
         .child(spectator(level, ds, "pdev", { ...him, canDown, pile: opts.pile ?? 2 }).absolute().left(0).top(16))
         // clicking him: on top of his drawing, so the pixels can't swallow it
         .child(div().id("saw-dev").absolute().left(0).top(16).w(devW).h(devH).cursor_pointer()
           .when(!!opts.onDev, (e) => e.on_click((_e, cx) => opts.onDev(cx))))
         // Buddy, Snowy, Simba and the birds: asleep on the chair (the birds on the lamp) when he's not in it, else reacting to him; above his
         // click target, so a pet asleep on the chair can be clicked too
-        .children(pets(poses, cornerH, ds, "pet", opts.walk ?? {}, petMore))
+        .children(pets(poses, cornerH, ds, "pet", opts.walk ?? {}, { ...petMore, layer: "front" }))
         .when(ship != null, (e) => e.child(explosion(ship, devW / 2, cornerH / 2, `boom-${opts.shipKey ?? 0}`, !!opts.firstShip, opts.banner)))));
 }

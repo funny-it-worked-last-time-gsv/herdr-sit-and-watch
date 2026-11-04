@@ -249,6 +249,14 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   Buddy -33,70, Snowy 106,78 and Simba 138,78, only while that pet sits at home. A bird keeps one element
   (`pet-<name>-bird`) with `transition` on `left` and `top` (900ms), so a new perch is a flight; it's
   drawn `fly` until it lands. A bird faces into the room (mirrored right of x 40).
+- A computer is a perch too: `desk:<address>`, open while that agent is working. The desk draws the
+  bird (`deskBird()`, id `pet-<name>-desk`, on the desk top right of the monitor, facing it). The corner
+  only draws the flight: leg `up` slides it from its corner perch to `BIRD_SKY` (-60, over the desks)
+  and then it's gone from the corner; coming back, leg `down` draws it at `BIRD_SKY` and 60ms later at
+  its perch, so it drops in. It leaves as soon as that agent stops working.
+- The panel draws the perched birds before him (`pets(..., { layer: "back" })`) so his hands, head and
+  speech bubble are in front, and the rest after (`layer: "front"`), with a transparent click box
+  (`pet-<name>-hit`) over a bird on the chair back, since his own click target covers it.
 - `birdTick(cx, force)` in `main.js`, on the 1s timer: each bird's next hop is 40-120s away, only
   while an agent is working or blocked and it's awake; at once if the pet under it walks off or reacts.
   `nextPerch(bird, here, open)` in `rules.js` picks from the open perches (never the other bird's).
