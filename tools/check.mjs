@@ -33,7 +33,8 @@ const { clock, world, makeCx, reseed, texts, ids, count, walk, sendCommand } = S
 
 // Intended differences from the golden (new features), and the element budget headroom.
 const ALLOWED = { newChips: [], newOneShots: [], newDemoStates: 0 };   // since the golden's commit (013b547): none yet
-const BUDGET_HEADROOM = 60;
+// 100 since the birds (+37 a render): demo state 6 (355 elements) watched live in Herdr without a cut-off.
+const BUDGET_HEADROOM = 100;
 
 // ---- harness ----------------------------------------------------------------
 const H = 3600 * 1000, MIN = 60 * 1000;
@@ -318,6 +319,55 @@ const petIds = (tree, name) => ids(tree).filter((x) => x.startsWith(`pet-${name}
 const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
 const A = await import(pathToFileURL(join(MOD, "art.js")).href);
 const OPT = await import(pathToFileURL(join(MOD, "options.js")).href);
+
+{ // the birds: asleep on the lamp, flapping on the loud moments, hopping between perches while agents run
+  // Value: protects=petPoses()'s bird rule, birdTick() moving them only while busy, never onto one perch together and off a
+  //   pet that walks away, and birdZoom() drawing one at the camera for under a second; fails_when=the birds hop with nothing
+  //   running, share a perch, stay on Buddy after he's gone, sleep while he's in the chair by day, or the zoom never clears;
+  //   why_new=the birds are new since the golden; no_claim=nextPerch()'s choice (any open perch passes)
+  const bp = (st) => { const p = R.petPoses(st); return `${p["jin-bao"]}/${p["jow-shy"]}`; };
+  for (const [name, st, want] of [["empty chair", { present: false, ship: true }, "sleep/sleep"], ["night", { present: true, night: true, ship: true }, "sleep/sleep"],
+    ["sitting", { present: true }, "sit/sit"], ["ship", { present: true, ship: true }, "flap/flap"], ["power", { present: true, mood: "power" }, "flap/flap"],
+    ["ovation", { present: true, ovation: true }, "flap/flap"], ["meltdown", { present: true, mood: "allBlocked" }, "sit/sit"]])
+    if (bp(st) !== want) fails.push(`birds ${name}: ${bp(st)}, want ${want}`);
+  const perchOf = (tree, n) => tree && S.findId(tree, (x) => x === `pet-${n}-bird`)?.calls.find(([k]) => k === "left")?.[1][0];
+  const asleep = render(mount().o, LISTS.idle3);
+  if (perchOf(asleep, "Jin-Bao") !== 76 || perchOf(asleep, "Jow-Shy") !== 90) fails.push(`birds asleep: should be on the lamp (76, 90), were ${perchOf(asleep, "Jin-Bao")}, ${perchOf(asleep, "Jow-Shy")}`);
+  { // idle: they never move
+    const { o } = mount(); render(o, LISTS.idle3);
+    for (let i = 0; i < 600; i++) { S.advance(1000); render(o, LISTS.idle3); }
+    if (Object.values(o.birds ?? {}).some((b) => b.flying || !["chairL", "chairR"].includes(b.perch))) fails.push(`birds: hopped with nothing running: ${JSON.stringify(o.birds)}`);
+  }
+  { // busy: both hop, never onto the same perch
+    const { o } = mount(); render(o, LISTS.w2i1);
+    const seen = { "Jin-Bao": new Set(), "Jow-Shy": new Set() };
+    let shared = null;
+    for (let i = 0; i < 600; i++) {
+      S.advance(1000); render(o, LISTS.w2i1);
+      for (const [k, b] of Object.entries(o.birds ?? {})) seen[k].add(b.perch);
+      if (o.birds?.["Jin-Bao"]?.perch === o.birds?.["Jow-Shy"]?.perch) shared ??= o.birds["Jin-Bao"].perch;
+    }
+    for (const [k, v] of Object.entries(seen)) if (v.size < 3) fails.push(`birds: in 10 busy minutes ${k} only sat on ${[...v]}`);
+    if (shared) fails.push(`birds: both on ${shared} at once`);
+  }
+  { // on Buddy when he walks off: the bird flies somewhere else at the next tick
+    const { o, cx } = mount(); render(o, LISTS.w1);
+    S.advance(1000); render(o, LISTS.w1);
+    o.birds["Jin-Bao"].perch = "Buddy"; o.birds["Jin-Bao"].next = Date.now() + 10 * MIN;
+    o.wanderTick(cx, true); S.advance(2000); render(o, LISTS.w1); S.advance(1000);
+    if (o.birds["Jin-Bao"].perch === "Buddy") fails.push("birds: Jin-Bao stayed on Buddy after he walked off");
+  }
+  { // at the camera: front-on and growing, then gone
+    const { o, cx } = mount(); render(o, LISTS.w1);
+    o.birdZoom(cx); S.advance(300);
+    const t = render(o, LISTS.w1), z = ids(t).filter((x) => /^pet-.*-zoom-/.test(x));
+    S.advance(1000);
+    const after = render(o, LISTS.w1);
+    if (z.length !== 1) fails.push(`birds zoom: want one bird at the camera, saw ${z}`);
+    if (ids(after).some((x) => /-zoom-/.test(x)) || !ids(after).includes("pet-Jin-Bao-bird") || !ids(after).includes("pet-Jow-Shy-bird")) fails.push(`birds zoom: should be back on their perches after a second, saw ${ids(after).filter((x) => x.startsWith("pet-"))}`);
+    noErr(t, "birds zoom");
+  }
+}
 const allPetIds = (tree) => ids(tree).filter((x) => x.startsWith("pet-") && !x.endsWith("-step"));
 const leftOf = (tree, id) => S.findId(tree, (x) => x === id)?.calls.find(([k]) => k === "left")?.[1][0] ?? null;
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -328,12 +378,13 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   //   missing from a partial pets object reads as off, unknown pet names survive, the default floor stops being slate, or
   //   setOption() replaces the stored object instead of merging; why_new=the golden only ever stores { dev: true }, nothing
   //   reads options back; seam=none; no_claim=does not check names like "toString" as a floor (they pass today, see report)
-  const DEF = { height: null, floor: "slate", pets: { Buddy: true, Snowy: true, Simba: true }, speech: true, activity: true, chaos: false, dev: false };
+  const DEF = { height: null, floor: "slate", pets: { Buddy: true, Snowy: true, Simba: true, "Jin-Bao": true, "Jow-Shy": true }, speech: true, activity: true, chaos: false, dev: false };
+  const BIRDS_ON = { "Jin-Bao": true, "Jow-Shy": true };
   const cases = [
     [undefined, DEF], [null, DEF], ["garbage", DEF], [42, DEF], [{}, DEF],
     [{ floor: "lava" }, DEF], [{ floor: "teal" }, { ...DEF, floor: "teal" }],
     [{ pets: "no" }, DEF], [{ pets: null }, DEF], [{ pets: { Rex: false } }, DEF],
-    [{ pets: { Simba: false } }, { ...DEF, pets: { Buddy: true, Snowy: true, Simba: false } }],
+    [{ pets: { Simba: false } }, { ...DEF, pets: { Buddy: true, Snowy: true, Simba: false, ...BIRDS_ON } }],
     [{ speech: false }, { ...DEF, speech: false }], [{ speech: "no" }, DEF],
     [{ activity: false }, { ...DEF, activity: false }], [{ activity: "no" }, DEF], [{ activity: 0 }, DEF],
     [{ chaos: true }, { ...DEF, chaos: true }], [{ chaos: "true" }, DEF], [{ chaos: 1 }, DEF],
@@ -348,7 +399,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   world.shared[OPT.OPTIONS_KEY] = { floor: "teal", pets: { Buddy: false } };
   OPT.setOption({ speech: false });
   const stored = world.shared[OPT.OPTIONS_KEY];
-  if (!same(stored, { ...DEF, floor: "teal", pets: { Buddy: false, Snowy: true, Simba: true }, speech: false }))
+  if (!same(stored, { ...DEF, floor: "teal", pets: { Buddy: false, Snowy: true, Simba: true, ...BIRDS_ON }, speech: false }))
     fails.push(`options: setOption should merge into what's stored, stored ${JSON.stringify(stored)}`);
 }
 
@@ -358,7 +409,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   //   checked before meltdown), the curl stops winning over a ship, Simba stays at night, the can goes to a missing Simba, or
   //   ovation brings Simba back at night; why_new=pet poses are not in the golden (observe() reads only pdev ids) and the
   //   wander checks only use sit; seam=none; no_claim=does not check how the poses are drawn
-  const P = (st) => R.petPoses(st);
+  const P = (st) => { const { buddy, snowy, simba } = R.petPoses(st); return { buddy, snowy, simba }; };
   const want = (name, got, exp) => { if (!same(got, exp)) fails.push(`pet poses ${name}: got ${JSON.stringify(got)}, want ${JSON.stringify(exp)}`); };
   const sit = { buddy: "sit", snowy: "sit", simba: "sit" };
   want("empty chair beats a ship", P({ present: false, ship: true, knock: true }), { buddy: "curl", snowy: "curl", simba: "curl" });
@@ -395,13 +446,13 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   for (const [k, f] of Object.entries(R.FLOORS)) if (bg(at({ floor: k })) !== f.color) fails.push(`options: floor ${k} should paint ${f.color}, was ${bg(at({ floor: k }))}`);
   const broken = at({ floor: "lava", pets: "x", speech: "no", dev: "yes" });
   if (bg(broken) !== "#6b7a8f") fails.push(`options: a broken store should fall back to slate, was ${bg(broken)}`);
-  for (const n of ["Buddy", "Snowy", "Simba"]) if (!allPetIds(broken).some((x) => x.startsWith(`pet-${n}-`))) fails.push(`options: a broken store hid ${n}`);
+  for (const n of ["Buddy", "Snowy", "Simba", "Jin-Bao", "Jow-Shy"]) if (!allPetIds(broken).some((x) => x.startsWith(`pet-${n}-`))) fails.push(`options: a broken store hid ${n}`);
   if (ids(broken).some((x) => x.startsWith("saw-devstrip"))) fails.push("options: dev: \"yes\" turned developer mode on");
   const talk = at({}), quiet = at({ speech: false });
   if (!ids(talk).some((x) => x.startsWith("pdev-say-"))) fails.push("options: speech on should show his bubble");
   if (ids(quiet).some((x) => x.startsWith("pdev-say-"))) fails.push("options: speech off still shows his bubble");
   if (observe(quiet).split(" | ").slice(0, 3).join() !== observe(talk).split(" | ").slice(0, 3).join()) fails.push("options: speech off changed his pose");
-  const none = at({ pets: { Buddy: false, Snowy: false, Simba: false } });
+  const none = at({ pets: { Buddy: false, Snowy: false, Simba: false, "Jin-Bao": false, "Jow-Shy": false } });
   if (allPetIds(none).length) fails.push(`options: all pets off still drew ${allPetIds(none)}`);
   const noSimba = at({ pets: { Simba: false } });
   if (allPetIds(noSimba).some((x) => x.includes("Simba")) || !allPetIds(noSimba).includes("pet-Buddy-sit") || !allPetIds(noSimba).includes("pet-Snowy-sit"))
@@ -409,7 +460,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const knockNoSimba = at({ pets: { Simba: false } }, LISTS.w1, "knock");
   if (leftOf(knockNoSimba, "pet-Snowy-sit") !== 56 || !ids(knockNoSimba).includes("pet-can-down"))
     fails.push(`options: Simba off, Snowy should knock from the armrest (left 56) with the can down, saw left ${leftOf(knockNoSimba, "pet-Snowy-sit")}, ${allPetIds(knockNoSimba)}`);
-  const knockNone = at({ pets: { Buddy: false, Snowy: false, Simba: false } }, LISTS.w1, "knock");
+  const knockNone = at({ pets: { Buddy: false, Snowy: false, Simba: false, "Jin-Bao": false, "Jow-Shy": false } }, LISTS.w1, "knock");
   if (allPetIds(knockNone).length) fails.push(`options: with every pet off a forced knock still drew ${allPetIds(knockNone)}`);
   // The dialog itself renders from the same options (props.options opens it as an overlay).
   mount();
@@ -493,7 +544,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   };
   let n = 0;
   for (const p of A.PETS) {
-    const pal = p.kind === "cat" ? { O: p.coat.O, o: p.coat.o, i: p.coat.i, W: "#ffffff", K: "#2a2320", N: "#e07a8a" } : { ...p.coat };
+    const pal = p.kind === "cat" ? { O: p.coat.O, o: p.coat.o, i: p.coat.i, W: "#ffffff", K: "#2a2320", N: "#e07a8a" } : p.kind === "bird" ? { ...p.coat, K: "#1c1a24" } : { ...p.coat };
     pal.X = "#1c1a24";
     for (const [pose, rows0] of Object.entries(POSE[p.kind] ?? {})) for (const left of [false, true]) for (const edge of [false, true]) for (const s of [1, 3]) {
       let rows = edge ? grow(rows0) : rows0;
@@ -585,7 +636,7 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   press("opt-pet-Simba");
   if (optsNow().pets.Simba !== true) fails.push("dialog: Simba's pill again should switch Simba back on");
   press("opt-speech-off"); press("opt-activity-off"); press("opt-chaos-on"); press("opt-dev-on"); press("opt-height-400");
-  const want = { height: 400, floor: "teal", pets: { Buddy: true, Snowy: true, Simba: true }, speech: false, activity: false, chaos: true, dev: true };
+  const want = { height: 400, floor: "teal", pets: { Buddy: true, Snowy: true, Simba: true, "Jin-Bao": true, "Jow-Shy": true }, speech: false, activity: false, chaos: true, dev: true };
   if (!same(optsNow(), want)) fails.push(`dialog: after the clicks options are ${JSON.stringify(optsNow())}`);
   press("opt-dev-off");
   if (optsNow().dev) fails.push("dialog: dev off should turn developer mode off");

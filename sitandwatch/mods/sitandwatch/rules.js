@@ -95,9 +95,13 @@ export function effectiveMood(list, m, dev, ship) {
 // is on the floor), knock (his can is due off the armrest), ovation (he's standing), night }.
 // Whether a pet is there at all comes first: at night Simba is out, and Snowy does the knocking.
 // Then the loudest thing wins: ship > meltdown > spill > knock > ovation > disappointed.
+// The birds (Jin-Bao and Jow-Shy) sleep when the chair is empty (on the lamp) or it's night (on the chair back),
+// flap on the loud moments (a ship, POWER!, a standing ovation) and otherwise sit on their perch.
 export function petPoses(st) {
-  if (!st.present) return { buddy: "curl", snowy: "curl", simba: "curl" };
-  const out = { buddy: "sit", snowy: "sit", simba: st.night ? "gone" : "sit" };
+  const bird = !st.present || st.night ? "sleep" : st.ship || st.mood === "power" || st.ovation ? "flap" : "sit";
+  const birds = { "jin-bao": bird, "jow-shy": bird };
+  if (!st.present) return { buddy: "curl", snowy: "curl", simba: "curl", ...birds };
+  const out = { buddy: "sit", snowy: "sit", simba: st.night ? "gone" : "sit", ...birds };
   // Simba out (night) or switched off in Options: Snowy knocks instead.
   const knocker = st.night || st.hide?.Simba ? "snowy" : "simba";
   if (st.ship) out.buddy = "howl";
@@ -107,6 +111,16 @@ export function petPoses(st) {
   else if (st.knock) out[knocker] = st.pillow ? "knockBack" : "knock";   // the pillow has the armrest: up on the chair back
   else if (st.ovation) { out.snowy = "back"; if (out.simba !== "gone") out.simba = "back"; }
   return out;
+}
+
+// Where a bird hops next, every 40-120s while an agent is working or blocked (birdTick() in main.js),
+// and straight away when its perch goes (the pet it was on walks off or reacts).
+// bird: "Jin-Bao" or "Jow-Shy"; here: its perch now; open: the perches it can go to now (never its
+// own, never the other bird's, a pet only while it sits at home): any of chairL, chairR, Buddy,
+// Snowy, Simba. R(): a random number in [0, 1). Returns one of open (here if open is empty).
+export function nextPerch(bird, here, open, R = Math.random) {
+  // TODO(you): your birds' real habits. Placeholder: anywhere open, all equally likely.
+  return open.length ? open[Math.floor(R() * open.length)] : here;
 }
 
 // Developer mode's pet scenes: each forces the state that would show it.
@@ -133,7 +147,7 @@ export const FLOORS = {
 };
 // Panel heights the Options dialog offers (px); null leaves the block the size the layout gives it.
 export const HEIGHTS = [240, 300, 400, 500];
-export const DEFAULT_OPTIONS = { height: null, floor: "slate", pets: { Buddy: true, Snowy: true, Simba: true }, speech: true, chaos: false, dev: false };
+export const DEFAULT_OPTIONS = { height: null, floor: "slate", pets: { Buddy: true, Snowy: true, Simba: true, "Jin-Bao": true, "Jow-Shy": true }, speech: true, chaos: false, dev: false };
 
 // Whatever is stored, as a complete, valid options object (unknown or broken values fall back).
 export function readOptions(raw) {

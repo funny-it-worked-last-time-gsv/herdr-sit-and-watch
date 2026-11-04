@@ -37,7 +37,7 @@ Each of these is one state of the demo tour (`herdr-app do sitandwatch.demo-<n>`
 
 | Agents working | In the chair |
 | --- | --- |
-| None | Nobody. An empty chair: Snowy asleep on the back, Buddy on the seat, Simba on the armrest, his popcorn on the floor. |
+| None | Nobody. An empty chair: Snowy asleep on the back, Buddy on the seat, Simba on the armrest, Jin-Bao and Jow-Shy asleep side by side on the lamp, his popcorn on the floor. |
 | One | Popcorn, a foam finger, eyebrows creeping up. "ooh" |
 | Two or three | Clapping, wide eyes, sweating. "go on son!" |
 | Four or more (or all of them) | Standing ovation, bulging eyes, confetti. "SHIP IT!" |
@@ -64,10 +64,11 @@ Each of these is one state of the demo tour (`herdr-app do sitandwatch.demo-<n>`
 | Desks | Each labelled with its tab's name, or its space's (the project) while the tab has Herdr's number. In last-active order: whoever's working first, then the one that stopped most recently. A finished agent shows how long it's been waiting on its screen (`12m`) until you answer it: looking isn't enough, it goes once the agent works again. A desk left alone for an hour gets a cobweb; after 8 hours it's covered, screen dusty. |
 | Busy desks | A working desk's screen scrolls a little log (Read, Edit, Bash...; texture, not its real output). One working desk at a time says what it's on in a bubble: with the activity hook, what it's really doing right now ("Editing main.js", "Running npm test"); otherwise its terminal title (Claude Code sets it to the task). Renamed by screenshot mode when that's on. |
 | Claude Code sub-agents | Shown on their session's desk as finished/total (`2/5`: five started, two finished), yellow while any run, green when all are done, gone 8 seconds later. They count as working agents: his level, the header count, the power bar, the welcome and the finish. Needs the sub-agent hook, see below. |
-| The pets, any time he's there | Buddy, Snowy and Simba sit by the chair giving him a half-lidded side-eye. Meltdown: Buddy covers his eyes. Standing ovation: the cats turn their backs. Something ships: Buddy howls. After 10pm Simba's out. The loudest moment wins. |
+| The pets, any time he's there | Buddy, Snowy and Simba sit by the chair giving him a half-lidded side-eye. Meltdown: Buddy covers his eyes. Standing ovation: the cats turn their backs. Something ships: Buddy howls. After 10pm Simba's out and the birds are asleep on the chair back. The loudest moment wins. |
+| The birds, any time he's there | Jin-Bao (a conure) and Jow-Shy (a lovebird) perch on the chair back. While agents are busy they hop every 40-120s: the other corner or the head of whichever pet is sitting at home. They flap when something ships, at POWER! and at a standing ovation, and half the time one flies at the camera. |
 | One crashed or needs you (popcorn spilled) | Buddy goes for the popcorn and eats it down over a minute. |
 | Two or more at it for 10+ minutes | A cat knocks his can off the armrest (from the chair back once the pillow's there). |
-| You click a pet | It says what it thinks of him: "Simba: pathetic", "Buddy: walk?", "Snowy: zzz" if you woke her. |
+| You click a pet | It says what it thinks of him: "Simba: pathetic", "Buddy: walk?", "Snowy: zzz" if you woke her, "Jin-Bao: SQUAWK". |
 | Agents busy (now and then) | One of the pets gets up and wanders off the edge, back 25-75s later: Buddy out the left, Snowy and Simba out the right. Never while nothing is running. |
 | Something shipped | Explosion with a PR MERGED, DEPLOYED or IT'S LIVE banner, bigger the first time. "KABOOM!" (needs the Claude Code hook, see below) |
 
@@ -101,7 +102,7 @@ Click **OPTS** in the panel's header, or run `herdr-app do sitandwatch.options`,
   `herdr-app do sitandwatch.height-400` (or `height-layout`). Only in the sidebar (a column).
 - **Floor:** slate (the default; the orange and tan pets stand out on it), tan (the original), deep
   teal, sage or night navy.
-- **Pets:** switch Buddy, Snowy or Simba off. Recolour their coats in the `PETS` table in
+- **Pets:** switch Buddy, Snowy, Simba, Jin-Bao or Jow-Shy off. Recolour their coats in the `PETS` table in
   `art.js` (the names double as ids, so a rename needs a code change).
 - **Speech bubbles:** off and he still reacts, silently.
 - **Activity bubbles:** off and the desks show their task titles, not what each session is doing

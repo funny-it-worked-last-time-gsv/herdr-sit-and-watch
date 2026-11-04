@@ -100,7 +100,7 @@ const CAT = [".......O.O", ".......OOO", "O......OEO", "O..OOOOOOO", ".OOOOOOOO.
 export const CATS = ["#e0913a", "#5b5b66", "#2a2a2a", "#f4f0e6", "#a0704a"];
 export const cat = (coat, s, left) => sprite(left ? CAT.map((row) => [...row].reverse().join("")) : CAT, { O: coat, E: "#7bd389" }, s);
 
-// ---- the household: two cats and a beagle who are disappointed in him -----------
+// ---- the household: two cats, a beagle and two parrots who are disappointed in him -----------
 // Recolour them to look like your own pets: the coat colours. The names are also their ids (Options,
 // poses, where they sit and wander), so renaming one means renaming it in rules.js and here too.
 // The first cat sleeps on the chair back; the second knocks his can off and goes out at night.
@@ -108,7 +108,13 @@ export const PETS = [
   { name: "Buddy", kind: "beagle", coat: { B: "#7a4a24", T: "#d9a25a", W: "#f4f0e6", K: "#2a2320" } },
   { name: "Snowy", kind: "cat", coat: { O: "#f4f0e6", o: "#f4f0e6", i: "#f2b8c0" } },
   { name: "Simba", kind: "cat", coat: { O: "#e0913a", o: "#b86a24", i: "#f2b8c0" } },
+  // The birds hop between perches (BIRD_PERCH below) instead of walking off. Coat: H head, F cheek,
+  // C chest, R belly, W wing, T tail, P beak, E eye ring, L feet.
+  { name: "Jin-Bao", kind: "bird", species: "conure", coat: { H: "#f1e4b0", F: "#f2a15a", C: "#f0c43a", R: "#e0512f", W: "#5f9e3b", T: "#8a2f2a", P: "#c9a9a0", E: "#ffffff", L: "#e9a8a8" } },
+  { name: "Jow-Shy", kind: "bird", species: "lovebird", coat: { H: "#f08a4b", F: "#f6a878", C: "#8cc63f", R: "#8cc63f", W: "#3f8f3a", T: "#4a7fc1", P: "#efe2c2", E: "#f08a4b", L: "#8c8f96" } },
 ];
+export const BIRDS = PETS.filter((p) => p.kind === "bird");
+export const BIRD_S = 2;   // birds are drawn at scale 2: a third of a cat's height
 
 // Like sprite(), but far fewer divs (Herdr cuts long renders off): colours are painted most
 // common first, and each colour's rectangles may run through pixels that a later colour paints
@@ -198,6 +204,65 @@ const POSE = {
       ".ooooooooooO",
     ],
   },
+  // Birds, facing right. sit perched, flap wings up (something loud), fly side-on, sleep fluffed
+  // up with the eye shut, front coming at the camera.
+  bird: {
+    sit: [
+      "..HHH..",
+      ".HHHHH.",
+      ".HEKHPP",
+      ".HFFFPP",
+      ".WWFCC.",
+      "WWWCCC.",
+      "WWWRRR.",
+      ".WWRR..",
+      ".T.LL..",
+      "TT.....",
+    ],
+    flap: [
+      "WW.HHH..",
+      ".WHHHHH.",
+      "..HEKHPP",
+      "..HFFFPP",
+      "..WFCC..",
+      "..WCCC..",
+      "..WRRR..",
+      "..WRR...",
+      "..T.LL..",
+      ".TT.....",
+    ],
+    fly: [
+      "..WW.....",
+      "...WW.HH.",
+      "....WHEKP",
+      "TTCCCRFFP",
+      ".TWWRRC..",
+      "..WW.....",
+      ".WW......",
+    ],
+    sleep: [
+      "..HHH..",
+      ".HHHHH.",
+      ".HKKHP.",
+      ".FFFFP.",
+      "WWCCCC.",
+      "WWRRRC.",
+      ".WRRR..",
+      "..LL...",
+    ],
+    front: [
+      "....HHH....",
+      "...HHHHH...",
+      "...EKHKE...",
+      "...FHPHF...",
+      "W..FCPCF..W",
+      "WW.CCCCC.WW",
+      ".WWWRRRWWW.",
+      "..WWRRRWW..",
+      "....RRR....",
+      "....L.L....",
+    ],
+  },
   beagle: {
     sit: [
       "..TTTTTTTT..",
@@ -268,8 +333,8 @@ const POSE = {
 export function pet(p, pose, s, left = false, outline = false) {
   let rows = POSE[p.kind][pose];
   if (outline) rows = outlined(rows);
-  const pal = p.kind === "cat"
-    ? { O: p.coat.O, o: p.coat.o, i: p.coat.i, W: "#ffffff", K: "#2a2320", N: "#e07a8a" }
+  const pal = p.kind === "cat" ? { O: p.coat.O, o: p.coat.o, i: p.coat.i, W: "#ffffff", K: "#2a2320", N: "#e07a8a" }
+    : p.kind === "bird" ? { ...p.coat, K: "#1c1a24" }
     : { B: p.coat.B, T: p.coat.T, W: p.coat.W, K: p.coat.K };
   return blocks(left ? flip(rows) : rows, { ...pal, X: "#1c1a24" }, s);
 }
@@ -291,9 +356,15 @@ function outlined(rows) {
 // "out0" at its spot about to go, "out1" sliding off the edge, "away" gone, "in0" just past the edge,
 // "in1" sliding back. Only a pet sitting (or with its back turned) wanders; a reaction keeps it put.
 export const WALK_MS = 1800;
+// Where a bird can sit: [left, feet] in the same px. The chair back's top corners, the lamp shade
+// (two spots, where they sleep side by side when the chair is empty), and the heads of the others while they sit at home.
+export const BIRD_PERCH = { chairL: [8, 25], chairR: [56, 25], lamp: [76, 4], lamp2: [90, 4], Buddy: [-33, 70], Snowy: [106, 78], Simba: [138, 78] };
+export const FLY_MS = 900;
 const HOME = { Buddy: -44, Snowy: 100, Simba: 132 }, EXIT = { Buddy: -120, Snowy: 210, Simba: 210 };
 // more: { onPet(name, cx) click handler, poke: { name, line } the bubble to show, canDown (the can is on
-// the floor: the knock's second stage), pile (popcorn left while Buddy eats: 2, 1, 0) }.
+// the floor: the knock's second stage), pile (popcorn left while Buddy eats: 2, 1, 0),
+// birds: { [name]: { perch, flying } } where each bird is (see birdTick() in main.js),
+// zoom: { name, s } a bird flying at the camera, drawn front-on at scale s over the corner }.
 export function pets(poses, cornerH, s, id, walk = {}, more = {}) {
   const [buddy, snowy, simba] = PETS;
   const floor = cornerH - 8;                               // their feet, on the rug
@@ -346,6 +417,32 @@ export function pets(poses, cornerH, s, id, walk = {}, more = {}) {
   };
   cat(snowy, poses.snowy, 0);
   cat(simba, poses.simba, 1);
+  // The birds: one id each for good, so a change of perch flies there (transition on left and top).
+  // Asleep (the chair empty, or night) side by side on the lamp; on a pet only while it sits at home.
+  const sitting = (k) => ["sit", "back"].includes(poses[k.toLowerCase()]) && !walk[k];
+  BIRDS.forEach((p, i) => {
+    const pose = poses[p.name.toLowerCase()];
+    if (!pose || pose === "gone" || more.zoom?.name === p.name) return;
+    const b = more.birds?.[p.name] ?? {};
+    // the lamp only with the chair empty: his speech bubble covers the shade when he's there
+    let perch = pose === "sleep" ? (more.present === false ? (i ? "lamp2" : "lamp") : i ? "chairR" : "chairL") : b.perch ?? (i ? "chairR" : "chairL");
+    if (PETS.some((q) => q.name === perch) && !sitting(perch)) perch = i ? "chairR" : "chairL";
+    const [x, feet] = BIRD_PERCH[perch], drawn = b.flying ? "fly" : pose;
+    const h = POSE.bird[drawn].length * BIRD_S, face = x > 40;   // face into the room
+    spots[p.name] = { x, top: feet - h };
+    // the bob only while flapping or flying (a still bird is one element fewer)
+    const art = pet(p, drawn, BIRD_S, face), moving = drawn === "flap" || drawn === "fly";
+    const body = moving ? div().relative().id(`${id}-${p.name}-step`).loop("top", { from: 0, to: -3, period: drawn === "fly" ? 160 : 260 }).child(art) : art;
+    out.push(click(div().absolute().left(x).top(feet - h).id(`${id}-${p.name}-bird`)
+      .transition("left", { duration: FLY_MS, easing: "ease-in-out" }).transition("top", { duration: FLY_MS, easing: "ease-in-out" })
+      .child(body), p));
+  });
+  // One bird coming at the camera: front-on and growing, centred on the corner (main.js steps s up)
+  const zb = more.zoom && BIRDS.find((p) => p.name === more.zoom.name);
+  if (zb) {
+    const zs = more.zoom.s, rows = POSE.bird.front;
+    out.push(div().absolute().left(39 - (rows[0].length * zs) / 2).top(cornerH / 2 - (rows.length * zs) / 2).id(`${id}-${zb.name}-zoom-${zs}`).child(pet(zb, "front", zs)));
+  }
   // the can it pushed off, on the floor under the armrest (the knock's second stage)
   if (more.canDown) out.push(r(66, floor - 9, 12, 9, "#c0c6cf").child(r(3, 0, 6, 9, "#c9302c")).id(`${id}-can-down`));
   // a clicked pet's bubble: "<name>: <line>", over where it's drawn

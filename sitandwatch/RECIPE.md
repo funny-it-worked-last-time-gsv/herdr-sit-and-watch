@@ -237,10 +237,28 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   | Otherwise | sit | sit | sit |
 
   A pet switched off in Options is not drawn (Snowy knocks if Simba is off).
+- The birds, Jin-Bao (conure: cream head `#f1e4b0`, orange cheek, yellow chest, red belly
+  `#e0512f`, green wings `#5f9e3b`, white eye ring) and Jow-Shy (peach-faced lovebird: orange face
+  `#f08a4b`, green body, blue tail `#4a7fc1`, pale beak), `kind: "bird"`, drawn at scale 2 (`BIRD_S`):
+  `sit` 7×10, `flap` 8×10, `fly` 9×7, `sleep` 7×8, `front` 11×10 (coming at the camera). Their pose,
+  also from `petPoses()`: `sleep` on the empty chair or after 10pm, `flap` on a ship, POWER! or an
+  ovation, else `sit`.
+- Bird perches (`BIRD_PERCH`, `[left, feet]`): `chairL` 8,25 and `chairR` 56,25 (the chair back's top
+  corners), `lamp`/`lamp2` 76,4 and 90,4 (on the shade, only to sleep with the chair empty: his speech
+  bubble covers it when he's there, so at night they sleep on the chair back), and the heads of
+  Buddy -33,70, Snowy 106,78 and Simba 138,78, only while that pet sits at home. A bird keeps one element
+  (`pet-<name>-bird`) with `transition` on `left` and `top` (900ms), so a new perch is a flight; it's
+  drawn `fly` until it lands. A bird faces into the room (mirrored right of x 40).
+- `birdTick(cx, force)` in `main.js`, on the 1s timer: each bird's next hop is 40-120s away, only
+  while an agent is working or blocked and it's awake; at once if the pet under it walks off or reacts.
+  `nextPerch(bird, here, open)` in `rules.js` picks from the open perches (never the other bird's).
+- `birdZoom(cx)`: one awake bird, front-on, centred on the corner at scale 2, 3, 5, 8, 12, 16 (110ms
+  each), then gone. Fired half the time on a ship (400ms in) and on POWER!; `herdr-app do
+  sitandwatch.zoom` fires it now, `sitandwatch.wander` sends both birds hopping.
 
 ## Pets wandering
 
-- `wanderTick(cx, force)` in `main.js`, on the 1s timer: each pet has its own clock (next trip in
+- `wanderTick(cx, force)` in `main.js`, on the 1s timer (the birds fly instead): each pet has its own clock (next trip in
   3-7 min, away 25-75s), and only while an agent is working or blocked; otherwise they're home
   (asleep on the chair), so nothing moves when nothing is happening.
 - Two-stage, like `boom()`: phase `out0` draws the pet at its spot with id `pet-<name>-walk`, 60ms
