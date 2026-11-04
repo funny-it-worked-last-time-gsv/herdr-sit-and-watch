@@ -179,13 +179,13 @@ export function panel(list, party = false, opts = {}) {
   const hide = Object.fromEntries(Object.entries(o.pets).map(([k, on]) => [k, !on]));
   const real = { present: st.present, ship: ship != null, mood, spilled: st.spilled, knock: !!opts.knock, pillow: st.depth >= 2, ovation: st.L === 3, night: him.night };
   const poses = petPoses({ ...(dev?.pets ? PET_SCENES[dev.pets] : real), hide });
-  for (const [k, name] of [["buddy", "Buddy"], ["snowy", "Snowy"], ["simba", "Simba"]]) if (hide[name]) poses[k] = "gone";
+  for (const name of Object.keys(hide)) if (hide[name]) poses[name.toLowerCase()] = "gone";
   // The knock plays in two stages once it's actually drawn (main.js starts the second); tell main.js what
   // was drawn: whether a cat is knocking, and whether his popcorn is on the floor (the pile shrinks).
   const knocking = [poses.snowy, poses.simba].some((p) => p === "knock" || p === "knockBack");
   const canDown = knocking && (opts.canStage === 1 || dev?.pets === "knock");
   opts.onDrawn?.({ knocking, spilled: st.spilled, poses });
-  const petMore = { onPet: opts.onPet, poke: (m?.fx?.petPoke ?? 0) > 0 ? opts.petPoke : null, canDown, pile: opts.pile ?? 2 };
+  const petMore = { onPet: opts.onPet, poke: (m?.fx?.petPoke ?? 0) > 0 ? opts.petPoke : null, canDown, pile: opts.pile ?? 2, birds: opts.birds, zoom: opts.zoom, present: st.present };
   // Nothing here depends on the panel's measured size: flex does all the fitting,
   // so resizing the column never needs a re-render.
   return v_flex().id("saw-panel").size_full().overflow_hidden().bg(FLOORS[o.floor].color)
@@ -216,7 +216,7 @@ export function panel(list, party = false, opts = {}) {
         // clicking him: on top of his drawing, so the pixels can't swallow it
         .child(div().id("saw-dev").absolute().left(0).top(16).w(devW).h(devH).cursor_pointer()
           .when(!!opts.onDev, (e) => e.on_click((_e, cx) => opts.onDev(cx))))
-        // Buddy, Snowy and Simba: asleep on the chair when he's not in it, else reacting to him; above his
+        // Buddy, Snowy, Simba and the birds: asleep on the chair (the birds on the lamp) when he's not in it, else reacting to him; above his
         // click target, so a pet asleep on the chair can be clicked too
         .children(pets(poses, cornerH, ds, "pet", opts.walk ?? {}, petMore))
         .when(ship != null, (e) => e.child(explosion(ship, devW / 2, cornerH / 2, `boom-${opts.shipKey ?? 0}`, !!opts.firstShip, opts.banner)))));

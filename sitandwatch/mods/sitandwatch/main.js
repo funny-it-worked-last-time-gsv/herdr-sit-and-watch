@@ -2,12 +2,12 @@ import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { agents, hc, nextCommand, spaces, panes, props, run, setAgentOrder, knownAgents, layout, notify } from "herdr";
 import { options, setOption, optionsDialog, openOptions } from "./options.js";
-import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H, PETS, WALK_MS } from "./art.js";
+import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H, PETS, WALK_MS, BIRDS, FLY_MS } from "./art.js";
 import { LINES } from "./lines.js";
 import { panel } from "./panel.js";
 import { spaceLabel, tabLabel, tabName } from "./names.js";
 import { spaceName, tabText } from "./privacy.js";
-import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, planHeight, HEIGHT_TROUBLE, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_OPEN, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting, talker, sayText, SAY_TURN_MS, SAY_SHOW_MS, parseActCommand, freshAct, actChanged } from "./rules.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, planHeight, HEIGHT_TROUBLE, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_OPEN, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting, talker, sayText, SAY_TURN_MS, SAY_SHOW_MS, parseActCommand, freshAct, actChanged, nextPerch } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -205,7 +205,9 @@ export default class Office extends View {
         for (const k of ONE_SHOTS) if (this.m[k] > 0) { this.m[k]--; changed = true; }
         if (partyOver) startOneShot(this.m, "linger", 1);   // a second of confetti still drifting down
         this.wanderTick(cx);
+        this.birdTick(cx);
         if (this.powerTick(token)) changed = true;
+        if (this.zoomDue) { this.zoomDue = false; if (Math.random() < 0.5) this.birdZoom(cx); }   // POWER!
         this.heightTick(token);
         this.minBusy = false;
         if (this.minCheck()) changed = true;
@@ -258,7 +260,9 @@ export default class Office extends View {
           // `herdr-app do sitandwatch.activity`: the activity bubbles on or off (the hook reads it too, and stops sending)
           if (c === "activity") { this.acts = {}; setOption({ activity: !options().activity }); cx.notify(); }
           if (c === "options") openOptions();
-          if (c === "wander") this.wanderTick(cx, true);
+          if (c === "wander") { this.wanderTick(cx, true); this.birdTick(cx, true); }
+          // `herdr-app do sitandwatch.zoom`: a bird flies at the camera now
+          if (c === "zoom") this.birdZoom(cx);
           if (c === "min") this.minimise(cx);
           // height-<240|300|400|500|layout>: the panel's height, as the Options dialog sets it (remembered)
           if (c.startsWith("height-")) {                       // anything else (height-350, a typo) is ignored
@@ -426,7 +430,7 @@ export default class Office extends View {
   pokePet(name, cx) {
     const p = PETS.find((x) => x.name === name) ?? PETS[Math.floor(Math.random() * PETS.length)];
     const pose = this.drawn?.poses?.[p.name.toLowerCase()];
-    const pool = pose === "curl" ? LINES.asleep : LINES[p.kind] ?? LINES.cat;
+    const pool = pose === "curl" || pose === "sleep" ? LINES.asleep : LINES[p.kind] ?? LINES.cat;
     this.m.petSay = { name: p.name, line: pool[Math.floor(Math.random() * pool.length)] };   // (m.petPoke is its tick count)
     startOneShot(this.m, "petPoke");
     this.m.lastUser = Date.now();
@@ -444,7 +448,7 @@ export default class Office extends View {
     const before = powerShown(this.m.power);
     const { power, fire } = powerStep(this.m.power, working, this.ship != null);
     this.m.power = power;
-    if (fire) startOneShot(this.m, "powerUp");
+    if (fire) { startOneShot(this.m, "powerUp"); this.zoomDue = true; }
     if (powerShown(power) === before && !fire) return false;
     try { localStorage.setItem("power", String(power)); localStorage.setItem("powerAt", String(Date.now())); } catch {}
     return true;
@@ -462,7 +466,7 @@ export default class Office extends View {
       if (W[name]?.key !== key) return;                   // a newer trip took over
       W[name].phase = phase; then?.(W[name]); cx.notify();
     });
-    for (const { name } of PETS) {
+    for (const { name } of PETS.filter((p) => p.kind !== "bird")) {   // the birds fly instead (birdTick)
       const w = (W[name] ??= { phase: "home", next: later(3 * MIN, 4 * MIN) });
       if (!active) { if (w.phase !== "home") Object.assign(w, { phase: "home", key: null }); continue; }
       if (w.phase === "home" && (force || now >= w.next)) {
@@ -479,6 +483,49 @@ export default class Office extends View {
     }
   }
 
+  // The birds hop from perch to perch on their own clocks (40-120s), only while an agent is working or
+  // blocked and they're awake; and at once if the pet they're on walks off or reacts. The bird keeps one
+  // element, so the new perch is a flight (transition in art.js); "flying" draws it wings out until it lands.
+  // force: both, now (dev mode, `sitandwatch.wander`).
+  birdTick(cx, force = false) {
+    const now = Date.now(), B = (this.birds ??= {});
+    const active = this.demoAt == null && this.list.some((a) => a.status === "working" || a.status === "blocked");
+    const poses = this.drawn?.poses ?? {}, walk = this.walk ?? {};
+    const later = () => now + 40 * 1000 + Math.floor(Math.random() * 80 * 1000);
+    const isPet = (k) => PETS.some((q) => q.name === k && q.kind !== "bird");
+    const home = (k) => ["sit", "back"].includes(poses[k.toLowerCase()]) && (walk[k]?.phase ?? "home") === "home";
+    BIRDS.forEach((p, i) => {
+      const b = (B[p.name] ??= { perch: i ? "chairR" : "chairL", next: later() });
+      if (!active || !["sit", "flap"].includes(poses[p.name.toLowerCase()])) return;
+      const lost = isPet(b.perch) && !home(b.perch);
+      if (!force && !lost && now < b.next) return;
+      const taken = BIRDS.filter((q) => q !== p).map((q) => B[q.name]?.perch);
+      const open = ["chairL", "chairR", "Buddy", "Snowy", "Simba"]   // not the lamp: his bubble's there
+        .filter((k) => k !== b.perch && !taken.includes(k) && (!isPet(k) || home(k)));
+      let to = nextPerch(p.name, b.perch, open);
+      if (!open.includes(to)) to = lost ? (open[0] ?? b.perch) : b.perch;   // a bad answer stays put
+      b.next = later();
+      if (to === b.perch) return;
+      const key = Math.random();
+      Object.assign(b, { perch: to, flying: true, key });
+      cx.timer.after(FLY_MS + 50, (cx) => { if (b.key === key) { b.flying = false; cx.notify(); } });
+      cx.notify();
+    });
+  }
+
+  // One awake bird flies at the camera: drawn front-on over the corner, a size bigger every 110ms, then
+  // gone (back on its perch). On a ship and on POWER!, half the time each.
+  birdZoom(cx) {
+    const poses = this.drawn?.poses ?? {};
+    const awake = BIRDS.filter((p) => ["sit", "flap"].includes(poses[p.name.toLowerCase()]));
+    if (!awake.length || this.zoom) return;
+    const p = awake[Math.floor(Math.random() * awake.length)], key = Math.random(), steps = [2, 3, 5, 8, 12, 16];
+    this.zoom = { name: p.name, s: steps[0], key };
+    steps.forEach((s, i) => cx.timer.after(i * 110, (cx) => { if (this.zoom?.key === key) { this.zoom.s = s; cx.notify(); } }));
+    cx.timer.after(steps.length * 110 + 150, (cx) => { if (this.zoom?.key === key) { this.zoom = null; cx.notify(); } });
+    cx.notify();
+  }
+
   // The ship explosion. kind: "merged", "deployed" or "pushed" (the default), for the banner.
   boom(kind, cx) {
     const key = Date.now();
@@ -487,6 +534,7 @@ export default class Office extends View {
     cx.notify();
     cx.timer.after(60, (cx) => { if (this.ship?.key === key) { this.ship.stage = 1; cx.notify(); } });
     cx.timer.after(SHIP_MS, (cx) => { if (this.ship?.key === key) { this.ship = null; cx.notify(); } });
+    if (Math.random() < 0.5) cx.timer.after(400, (cx) => this.birdZoom(cx));   // once the birds are up and flapping
   }
 
   // Developer mode's "fire" buttons: start a one-shot exactly as the real event would.
@@ -889,7 +937,7 @@ export default class Office extends View {
         onLevel: (v, cx) => { d.level = v; cx.notify(); },
         onFire: (v, cx) => this.fire(v, cx),
         pets: d.pets, onPets: (v, cx) => { d.pets = v; cx.notify(); },
-        onWander: (cx) => this.wanderTick(cx, true),
+        onWander: (cx) => { this.wanderTick(cx, true); this.birdTick(cx, true); },
         desks: d.desks, onDesks: (v, cx) => { d.desks = v; cx.notify(); },
         block: (() => { try { const b = findBlock(layout()); return b.ok ? `${b.id} ${b.axis} ${JSON.stringify(b.size)}` : `no block (${b.reason})`; } catch { return "no layout()"; } })(),
         min: this.min ? `${this.min.axis} seen ${this.min.seen ?? "-"}` : "off",
@@ -903,7 +951,7 @@ export default class Office extends View {
       try { return panel(list, (this.partyUntil ?? 0) > now, { say, toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk, idle, power: this.m.power,
         min: this.min?.axis ?? null, onMin: (cx) => this.minimise(cx),
         knock: canKnock(m.longestWorkingMs, devLevel(list)) || (this.m.knockUntil ?? 0) > now, canStage: this.m.canStage,
-        pile: pileSize(this.m.spillTicks ?? 0), petPoke: this.m.petSay, onPet: (name, cx) => this.pokePet(name, cx),
+        pile: pileSize(this.m.spillTicks ?? 0), petPoke: this.m.petSay, birds: this.birds, zoom: this.zoom, onPet: (name, cx) => this.pokePet(name, cx),
         onDrawn: (d) => { this.drawn = d; } }); }
       catch (e) { return div().p(8).bg("#fff").child(txt(`ERR ${e?.message ?? e}`, 12, "#a8322a")); }
     }

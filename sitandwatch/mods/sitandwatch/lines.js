@@ -130,6 +130,10 @@ export const LINES = {
     "can I have the popcorn", "boof", "he could at least type",
     "the humans are unwell", "popcorn tax"
   ],
+  bird: [
+    "SQUAWK", "pretty bird", "*bites cable*", "what's that", "scritches. now.", "kiss kiss",
+    "he's not even working", "*screams*", "mine", "step up", "seed?", "*chews the remote*"
+  ],
   asleep: [
     "zzz", "five more minutes", "mmf", "not now", "it's my chair now",
     "leave me", "I was here first"
