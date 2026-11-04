@@ -117,7 +117,7 @@ export function petPoses(st) {
 // and straight away when its perch goes (the pet it was on walks off or reacts).
 // bird: "Jin-Bao" or "Jow-Shy"; here: its perch now; open: the perches it can go to now (never its
 // own, never the other bird's, a pet only while it sits at home): any of chairL, chairR, Buddy,
-// Snowy, Simba. R(): a random number in [0, 1). Returns one of open (here if open is empty).
+// Snowy, Simba, and "desk:<address>" for each computer with an agent working at it. R(): a random number in [0, 1). Returns one of open (here if open is empty).
 export function nextPerch(bird, here, open, R = Math.random) {
   // TODO(you): your birds' real habits. Placeholder: anywhere open, all equally likely.
   return open.length ? open[Math.floor(R() * open.length)] : here;

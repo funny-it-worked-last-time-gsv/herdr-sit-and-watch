@@ -360,12 +360,27 @@ export const WALK_MS = 1800;
 // (two spots, where they sleep side by side when the chair is empty), and the heads of the others while they sit at home.
 export const BIRD_PERCH = { chairL: [8, 25], chairR: [56, 25], lamp: [76, 4], lamp2: [90, 4], Buddy: [-33, 70], Snowy: [106, 78], Simba: [138, 78] };
 export const FLY_MS = 900;
+// A bird on a computer: perch "desk:<address>", drawn by that desk (panel.js), on the desk top right of
+// the monitor, facing the screen. The corner draws only its flight: up out of the corner (leg "up") and,
+// coming back, down from there (leg "down"), at BIRD_SKY above the corner.
+export const BIRD_SKY = -60;
+export const birdDesk = (perch) => (typeof perch === "string" && perch.startsWith("desk:") ? perch.slice(5) : null);
+export function deskBird(p, pose, sw, id, onPet) {
+  const h = POSE.bird[pose].length * BIRD_S;
+  const el = div().absolute().left(Math.round(sw / 2) + 17).top(27 - h).id(`${id}-${p.name}-desk`).child(pet(p, pose, BIRD_S, true));
+  return onPet ? el.cursor_pointer().on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+    .on_click((_e, cx) => { cx.stop_propagation(); onPet(p.name, cx); }) : el;
+}
 const HOME = { Buddy: -44, Snowy: 100, Simba: 132 }, EXIT = { Buddy: -120, Snowy: 210, Simba: 210 };
 // more: { onPet(name, cx) click handler, poke: { name, line } the bubble to show, canDown (the can is on
 // the floor: the knock's second stage), pile (popcorn left while Buddy eats: 2, 1, 0),
 // birds: { [name]: { perch, flying } } where each bird is (see birdTick() in main.js),
-// zoom: { name, s } a bird flying at the camera, drawn front-on at scale s over the corner }.
+// zoom: { name, s } a bird flying at the camera, drawn front-on at scale s over the corner,
+// layer: "back" only the perched birds (drawn before him, so his hands and head are in front of them),
+// "front" everything else; unset, all of it }.
 export function pets(poses, cornerH, s, id, walk = {}, more = {}) {
+  if (more.layer === "back") return birds(poses, walk, more, id, (el, p) => more.onPet ? el.cursor_pointer()
+    .on_click((_e, cx) => { cx.stop_propagation(); more.onPet(p.name, cx); }) : el).back;
   const [buddy, snowy, simba] = PETS;
   const floor = cornerH - 8;                               // their feet, on the rug
   const seat = 16 + 17 * 3, back = 16 + 3 * 3, arm = 16 + 9 * 3;   // chair seat, back and armrest tops
@@ -417,26 +432,13 @@ export function pets(poses, cornerH, s, id, walk = {}, more = {}) {
   };
   cat(snowy, poses.snowy, 0);
   cat(simba, poses.simba, 1);
-  // The birds: one id each for good, so a change of perch flies there (transition on left and top).
-  // Asleep (the chair empty, or night) side by side on the lamp; on a pet only while it sits at home.
-  const sitting = (k) => ["sit", "back"].includes(poses[k.toLowerCase()]) && !walk[k];
-  BIRDS.forEach((p, i) => {
-    const pose = poses[p.name.toLowerCase()];
-    if (!pose || pose === "gone" || more.zoom?.name === p.name) return;
-    const b = more.birds?.[p.name] ?? {};
-    // the lamp only with the chair empty: his speech bubble covers the shade when he's there
-    let perch = pose === "sleep" ? (more.present === false ? (i ? "lamp2" : "lamp") : i ? "chairR" : "chairL") : b.perch ?? (i ? "chairR" : "chairL");
-    if (PETS.some((q) => q.name === perch) && !sitting(perch)) perch = i ? "chairR" : "chairL";
-    const [x, feet] = BIRD_PERCH[perch], drawn = b.flying ? "fly" : pose;
-    const h = POSE.bird[drawn].length * BIRD_S, face = x > 40;   // face into the room
-    spots[p.name] = { x, top: feet - h };
-    // the bob only while flapping or flying (a still bird is one element fewer)
-    const art = pet(p, drawn, BIRD_S, face), moving = drawn === "flap" || drawn === "fly";
-    const body = moving ? div().relative().id(`${id}-${p.name}-step`).loop("top", { from: 0, to: -3, period: drawn === "fly" ? 160 : 260 }).child(art) : art;
-    out.push(click(div().absolute().left(x).top(feet - h).id(`${id}-${p.name}-bird`)
-      .transition("left", { duration: FLY_MS, easing: "ease-in-out" }).transition("top", { duration: FLY_MS, easing: "ease-in-out" })
-      .child(body), p));
-  });
+  // The birds: in the back layer (behind him) when the panel splits them, so here only a click box for
+  // one on the chair back, where his own click target would swallow its clicks.
+  const bd = birds(poses, walk, more, id, click);
+  Object.assign(spots, bd.spots);
+  if (more.layer !== "front") out.push(...bd.back);
+  else for (const [name, sp] of Object.entries(bd.spots)) if (sp.chair)
+    out.push(click(div().absolute().left(sp.x).top(sp.top).w(sp.w).h(sp.h).id(`${id}-${name}-hit`), BIRDS.find((q) => q.name === name)));
   // One bird coming at the camera: front-on and growing, centred on the corner (main.js steps s up)
   const zb = more.zoom && BIRDS.find((p) => p.name === more.zoom.name);
   if (zb) {
@@ -450,6 +452,35 @@ export function pets(poses, cornerH, s, id, walk = {}, more = {}) {
   if (sp) out.push(div().absolute().left(Math.min(Math.max(sp.x - 20, -90), 60)).top(sp.top - 18).px(3).bg("#ffffff").border(1).border_color(ink)
     .id(`${id}-say-${more.poke.name}`).child(txt(`${more.poke.name}: ${more.poke.line}`, 10, ink)));
   return out.filter(Boolean);
+}
+
+// The birds: one id each for good, so a change of perch flies there (transition on left and top).
+// Asleep with the chair empty side by side on the lamp; on a pet only while it sits at home.
+// Returns { back: their elements, spots: { [name]: { x, top, w, h, chair } } }.
+function birds(poses, walk, more, id, click) {
+  const back = [], spots = {};
+  const sitting = (k) => ["sit", "back"].includes(poses[k.toLowerCase()]) && !walk[k];
+  BIRDS.forEach((p, i) => {
+    const pose = poses[p.name.toLowerCase()];
+    if (!pose || pose === "gone" || more.zoom?.name === p.name) return;
+    const b = more.birds?.[p.name] ?? {};
+    const atDesk = pose !== "sleep" && birdDesk(b.perch) != null;
+    if (atDesk && !b.leg) return;                     // on its computer: the desk draws it with the chair empty: his speech bubble covers the shade when he's there
+    let perch = pose === "sleep" ? (more.present === false ? (i ? "lamp2" : "lamp") : i ? "chairR" : "chairL") : b.perch ?? (i ? "chairR" : "chairL");
+    if (atDesk) perch = b.leg === "up" && BIRD_PERCH[b.from] ? b.from : i ? "chairR" : "chairL";   // flying up from here
+    if (PETS.some((q) => q.name === perch) && !sitting(perch)) perch = i ? "chairR" : "chairL";
+    const sky = b.leg === "up" || b.leg === "down";
+    const [x, feet] = [BIRD_PERCH[perch][0], sky ? BIRD_SKY : BIRD_PERCH[perch][1]], drawn = b.flying || sky ? "fly" : pose;
+    const h = POSE.bird[drawn].length * BIRD_S, face = x > 40;   // face into the room
+    spots[p.name] = { x, top: feet - h, w: POSE.bird[drawn][0].length * BIRD_S, h, chair: perch.startsWith("chair") };
+    // the bob only while flapping or flying (a still bird is one element fewer)
+    const art = pet(p, drawn, BIRD_S, face), moving = drawn === "flap" || drawn === "fly";
+    const body = moving ? div().relative().id(`${id}-${p.name}-step`).loop("top", { from: 0, to: -3, period: drawn === "fly" ? 160 : 260 }).child(art) : art;
+    back.push(click(div().absolute().left(x).top(feet - h).id(`${id}-${p.name}-bird`)
+      .transition("left", { duration: FLY_MS, easing: "ease-in-out" }).transition("top", { duration: FLY_MS, easing: "ease-in-out" })
+      .child(body), p));
+  });
+  return { back, spots };
 }
 
 // ---- the room -------------------------------------------------------------
