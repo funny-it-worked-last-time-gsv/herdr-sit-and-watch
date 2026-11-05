@@ -2,7 +2,7 @@
 // mods) keeps them in shared state "privacy"; privacy.js is its own file, copied in unchanged (its
 // mods each carry the same copy, and so does this one). Without screenshot mode, or with it off,
 // every name shows as it is.
-import { spaces } from "herdr";
+import { spaces } from "./demo.js";
 import { spaceName, tabText, privacyOn, matches, aliased } from "./privacy.js";
 
 // A text with no space or tab to go by (a terminal's own name): aliased when it holds a phrase, else the fallback.

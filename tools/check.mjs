@@ -1092,6 +1092,28 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   world.spaces = [];
 }
 
+// ---- shared "demo": made-up agents for screenshots -----------------------------------
+{
+  // Value: protects=while shared "demo" is on (screenshot mode's DEMO switch) the desks are demo.js's made-up agents,
+  // not the real ones, and clicking one moves the made-up selection instead of focusing a real terminal; off, the real
+  // agents are back; fails_when=a real name shows in demo, or the switch is ignored; why_new=screenshots of a real
+  // session leaked tab names; seam=demo.js (shared with the screenshot mode mods); no_claim=the other mods' demo views
+  const { o } = mount();
+  const real = [{ address: "r1", status: "working", tab_name: "secret-client", program: null, app: null, focused: false }];
+  const deskNames = (t) => { const out = []; walk(t, (e) => { if (e.idv?.startsWith("pn-")) out.push(e.text); }); return out; };
+  world.agents = real;
+  world.shared.demo = true;
+  const shown = deskNames(o.render());
+  if (shown.includes("secret-client") || !shown.includes("fix login")) fails.push(`demo: shared demo should show the made-up agents only, got ${shown}`);
+  const D = await import(pathToFileURL(join(MOD, "demo.js")).href);
+  world.runs = [];
+  D.run("agent.focus", { terminal: "demo-1-0" });
+  if (world.runs.length || world.shared["demo.sel"]?.s !== 1) fails.push(`demo: focusing a made-up agent should move the made-up selection, got runs ${JSON.stringify(world.runs)} sel ${JSON.stringify(world.shared["demo.sel"])}`);
+  world.shared.demo = false;
+  const back = deskNames(o.render());
+  if (back.join(",") !== "secret-client") fails.push(`demo: off, the real agents should be back, got ${back}`);
+}
+
 // ---- demo-<n> ----------------------------------------------------------------------
 {
   // Value: protects=`demo-<n>` opens the demo at state n (for recording one state; out of range is ignored) and the

@@ -1,6 +1,6 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run } from "herdr";
+import { run } from "./demo.js";
 import { ink, SCREEN, r, txt, look, bot, spectator, stance, pets, explosion, miniFace, DEV_W, DEV_H, hash, BIRDS, birdDesk, deskBird } from "./art.js";
 import { DEV_FIRE, effectiveMood, isNight, petPoses, PET_SCENES, FLOORS, cobwebLevel, DESK_AGES, sinceLabel, POWER_FULL, POWER_STEPS, powerShown, headcount, deskOf, logFrames } from "./rules.js";
 import { deskName, tabName } from "./names.js";
@@ -196,9 +196,12 @@ export function panel(list, party = false, opts = {}) {
   const petMore = { onPet: opts.onPet, poke: (m?.fx?.petPoke ?? 0) > 0 ? opts.petPoke : null, canDown, pile: opts.pile ?? 2, birds: opts.birds, zoom: opts.zoom, present: st.present };
   // Nothing here depends on the panel's measured size: flex does all the fitting,
   // so resizing the column never needs a re-render.
-  return v_flex().id("saw-panel").size_full().overflow_hidden().bg(FLOORS[o.floor].color)
+  // props.radius (default 0, square): rounds the panel to sit inside a layout card. GPUI
+  // doesn't clip children to a parent's radius, so the header and bottom strip round their own corners too.
+  const rad = opts.radius ?? 0;
+  return v_flex().id("saw-panel").size_full().overflow_hidden().rounded(rad).bg(FLOORS[o.floor].color)
     // header: click toggles the demo; in the demo it says which state you're looking at
-    .child(h_flex().id("saw-head").h(opts.label ? 30 : 23).w_full().flex_none().px(8).gap(6).items_center().cursor_pointer()
+    .child(h_flex().id("saw-head").h(opts.label ? 30 : 23).w_full().flex_none().px(8).gap(6).items_center().cursor_pointer().rounded_t(rad)
       .bg(opts.label ? "#6b3f1f" : "#8796b0").border_b(3).border_color("#7a4a28")
       .when(!!opts.toggle, (e) => e.on_click((_e, cx) => opts.toggle(cx)))
       .child(txt(opts.label ?? `${working}/${total} AT IT`, opts.label ? 10 : 12, "#fff8e1"))
@@ -216,7 +219,7 @@ export function panel(list, party = false, opts = {}) {
     .child(div().id("saw-desks").flex().flex_wrap().justify_center().content_start().flex_1().w_full().overflow_hidden().pt(6)
       .children(list.map((a) => desk(a, 0, 0, sw, rh, a.address === markAddr ? mood : null, opts.idle?.[a.address] ?? 0,
         opts.say?.address === a.address ? opts.say.text : null, onDesk[a.address] ?? null))))
-    .child(div().flex().justify_center().w_full().h(cornerH).flex_none().bg(glow)
+    .child(div().flex().justify_center().w_full().h(cornerH).flex_none().rounded_b(rad).bg(glow)
       .child(div().relative().w(devW).h(cornerH)
         .child(r(-12, cornerH - 16, devW + 24, 10, "#5e1420"))
         .child(r(devW + 10, 16, 3, devH - 6, "#3a3a3a")).child(r(devW + 3, 4, 17, 13, "#d97a3a"))

@@ -17,7 +17,7 @@ Install it. Sit down. Lose the plot in the best possible way. No network. Just y
 ## What you see
 
 One mod, `sitandwatch`, drawn as a narrow panel (made for a sidebar about 260–560px wide). Pixel text
-is `PxPlus IBM VGA 8x16` (shipped in `mods/sitandwatch/fonts/`). Nothing is rounded. The panel is a
+is `PxPlus IBM VGA 8x16` (shipped in `mods/sitandwatch/fonts/`). Nothing is rounded unless the block passes `props.radius`, which rounds the panel, its header's top corners and the bottom strip's lower corners (GPUI doesn't clip children to a parent's radius). The panel is a
 flex column, top to bottom, on the floor colour from Options (`FLOORS` in `rules.js`: slate
 `#6b7a8f` by default; tan `#e2a465`, deep teal `#3e6668`, sage `#95a88a`, night navy `#2e3a55`):
 
@@ -190,6 +190,7 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - `mods/sitandwatch/options.js`: the Options dialog.
 - `mods/sitandwatch/lines.js`: what he and the pets say, `pool()` and `pickLine()`.
 - `mods/sitandwatch/names.js` and `privacy.js`: every drawn name, through screenshot mode's renames.
+- `mods/sitandwatch/demo.js`: the live data (`agents`, `spaces`, `panes`, `run`), made up while shared `demo` is on.
 - `mods/sitandwatch/art.js`: sprites as rows of palette letters (`sprite(rows, palette, s)` draws one
   `div` per colour run), `bot()` from plain rectangles, `spectator(level, s, id, { panic, party, ship, mood, fx, ... })`,
   `explosion()`.
@@ -378,6 +379,11 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
   program's name for a tab); a space hidden by hand hides its tabs' names too; a terminal with no tab
   or space still gets aliases. Off or not installed: names as they are. Used by the desk labels, the
   name he calls out, and in the office view the space signs, desk names, the hover card and the rail.
+- `demo.js` is the screenshot mode mods' own file too, copied in unchanged. While shared `demo` is
+  true (their DEMO switch) `agents()`, `spaces()` and `panes()` return a made-up world of four spaces
+  and seven agents whose statuses move on shared `demo.tick`, hc's background helpers are left out, and
+  `run()` turns a focus on a made-up agent into a change of the made-up selection. Off, or not
+  installed, everything is live. The GIFs in `media/` were recorded with it on, so no real name shows.
 
 ## Options
 

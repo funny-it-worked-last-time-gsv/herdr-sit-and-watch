@@ -1,5 +1,5 @@
 // Screenshot mode. Shared state "privacy":
-//   { on, hidden: ["space:<id>", "machine:<name>"], phrases: [{ text, alias }] }
+//   { on, hidden: ["space:<id>", "machine:<name>", "tab:<id>"], phrases: [{ text, alias }] }
 // (a phrase may also be a plain string: no alias). An item is hidden when it is marked by
 // hand, or when its name, title, folder, repo or branch contains a phrase (any case).
 // When on, a hidden name whose matching phrases all have aliases shows with those swapped
@@ -15,13 +15,27 @@ const state = () => {
     on: !!s?.on,
     hidden: Array.isArray(s?.hidden) ? s.hidden : [],
     phrases: Array.isArray(s?.phrases) ? s.phrases : [],
+    shown: Array.isArray(s?.shown) ? s.shown : [],
   };
 };
 
 export const privacyOn = () => state().on;
 export const isMarked = (key) => state().hidden.includes(key);
+// Shown by hand: phrases don't hide it (a hand mark, or a hidden space or machine above it, still does).
+export const isShown = (key) => state().shown.includes(key);
+
+// One row's hand choice, in one write: "smudge" (marked), "show" (phrases ignored), or
+// "none" (back to what the phrases say). The phrase list is never touched.
+export function setChoice(key, how) {
+  const s = state();
+  const hidden = s.hidden.filter((k) => k !== key), shown = s.shown.filter((k) => k !== key);
+  if (how === "smudge") hidden.push(key);
+  if (how === "show") shown.push(key);
+  setShared("privacy", { ...s, hidden, shown });
+}
 export const spaceKey = (id) => `space:${id}`;
 export const machineKey = (name) => `machine:${name}`;
+export const tabKey = (id) => `tab:${id}`;
 // Every phrase as { text, alias } (alias "" when none).
 export const phrases = () => state().phrases
   .map((p) => (typeof p === "string" ? { text: p, alias: "" } : { text: String(p?.text ?? ""), alias: String(p?.alias ?? "") }))
@@ -56,14 +70,14 @@ export function matches(...texts) {
 }
 
 // The "would hide" checks ignore whether the mode is on (the sidebar shows them while off).
-export const machineHidden = (name) => !!name && (isMarked(machineKey(name)) || matches(name));
+export const machineHidden = (name) => !!name && (isMarked(machineKey(name)) || (!isShown(machineKey(name)) && matches(name)));
 
 const resolve = (sp) => (typeof sp === "string" ? spaces().find((x) => x.id === sp) : sp);
 
 export function spaceHidden(sp) {
   const w = resolve(sp);
   if (!w) return typeof sp === "string" && isMarked(spaceKey(sp));
-  return isMarked(spaceKey(w.id)) || machineHidden(w.machine) || matches(w.name, w.folder);
+  return isMarked(spaceKey(w.id)) || machineHidden(w.machine) || (!isShown(spaceKey(w.id)) && matches(w.name, w.folder));
 }
 
 export const spaceOfTab = (tabId) => spaces().find((w) => (w.tabs ?? []).some((t) => t.id === tabId));
@@ -72,8 +86,9 @@ export const spaceOfTab = (tabId) => spaces().find((w) => (w.tabs ?? []).some((t
 // branch) matches a phrase.
 export function tabHidden(tabId) {
   const w = spaceOfTab(tabId);
-  if (spaceHidden(w)) return true;
+  if (spaceHidden(w) || isMarked(tabKey(tabId))) return true;
   const tab = (w?.tabs ?? []).find((t) => t.id === tabId);
+  if (isShown(tabKey(tabId))) return false;
   if (tab && matches(tab.name)) return true;
   return panes().some((p) => p.tab === tabId && matches(p.title, p.cwd, p.branch));
 }
@@ -118,13 +133,13 @@ export function machineName(name) {
 // the tab isn't masked, aliased when it can be, else `fallback`.
 export function tabText(tabId, text, fallback) {
   if (!tabMasked(tabId)) return text;
-  if (byHand(spaceOfTab(tabId))) return fallback;
+  if (isMarked(tabKey(tabId)) || byHand(spaceOfTab(tabId))) return fallback;
   return aliased(text) ?? fallback;
 }
 
 // Text that belongs to a space (its repo or branch).
 export function spaceText(w, text, fallback) {
-  if (!spaceMasked(w) && !(privacyOn() && matches(text))) return text;
+  if (!spaceMasked(w) && !(privacyOn() && !(w && isShown(spaceKey(w.id))) && matches(text))) return text;
   if (byHand(w)) return fallback;
   return aliased(text) ?? fallback;
 }

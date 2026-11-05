@@ -1,6 +1,8 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { agents, hc, nextCommand, spaces, panes, props, run, setAgentOrder, knownAgents, layout, notify } from "herdr";
+import { hc, nextCommand, props, knownAgents, layout, notify } from "herdr";
+// Live data through demo.js: made-up agents while shared "demo" is on (screenshot-spaces).
+import { agents, spaces, panes, run, setAgentOrder, demoOn } from "./demo.js";
 import { options, setOption, optionsDialog, openOptions } from "./options.js";
 import { ink, WALL, SLOT_W, SLOT_H, SCREEN, CATS, RUGS, r, icon, txt, hash, rng, pick, look, deskLook, clutter, seated, standing, cat, room, spectator, DEV_W, DEV_H, PETS, WALK_MS, BIRDS, FLY_MS, birdDesk } from "./art.js";
 import { LINES } from "./lines.js";
@@ -442,7 +444,7 @@ export default class Office extends View {
   // Returns whether the drawn bar changed.
   powerTick(token) {
     try { if (localStorage.getItem(OWNER) !== token) return false; } catch { return false; }
-    const seen = new Set(), base = [...agents(), ...(this.helpers ?? [])].filter((a) => !seen.has(a.address) && seen.add(a.address));
+    const seen = new Set(), base = [...agents(), ...(demoOn() ? [] : this.helpers ?? [])].filter((a) => !seen.has(a.address) && seen.add(a.address));
     const live = [...base, ...subDesks(this.subs ?? {}, base)];
     const working = live.filter((a) => a.status === "working").length;
     const before = powerShown(this.m.power);
@@ -908,7 +910,7 @@ export default class Office extends View {
         const power = [0, 0.2, 0.5, 0.9][devLevel(fake)] * POWER_FULL;   // the demo's bar follows its level
         const sayAt = talker(fake, now), sayDesk = fake.find((a) => a.address === sayAt);
         const say = sayDesk ? { address: sayAt, text: sayText(tabLabel(sayDesk, sayDesk.title ?? "", ""), Math.floor(now / SAY_TURN_MS)) } : null;
-        return panel(fake, party, { say, label: `DEMO ${i + 1}/${scenes.length}  ${label}`, toggle, ship: stage, shipKey: loop * scenes.length + i, m, banner: BANNERS.merged, onDev: poke, idle, power });
+        return panel(fake, party, { say, radius: p.radius, label: `DEMO ${i + 1}/${scenes.length}  ${label}`, toggle, ship: stage, shipKey: loop * scenes.length + i, m, banner: BANNERS.merged, onDev: poke, idle, power });
       }
       // An agent going working -> done sets off the party popper for 3s; the 1s timer clears it.
       const prev = this.prevStatus ?? {};
@@ -951,7 +953,7 @@ export default class Office extends View {
       // its latest activity (the hook) while fresh, else its title; both through screenshot mode's renames
       const act = sayDesk && options().activity ? freshAct(this.acts?.[sayAt], now) : null;
       const say = sayDesk ? { address: sayAt, text: sayText(tabLabel(sayDesk, act ?? sayDesk.title ?? "", ""), Math.floor(now / SAY_TURN_MS), act != null) } : null;
-      try { return panel(list, (this.partyUntil ?? 0) > now, { say, toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk, idle, power: this.m.power,
+      try { return panel(list, (this.partyUntil ?? 0) > now, { say, radius: p.radius, toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk, idle, power: this.m.power,
         min: this.min?.axis ?? null, onMin: (cx) => this.minimise(cx),
         knock: canKnock(m.longestWorkingMs, devLevel(list)) || (this.m.knockUntil ?? 0) > now, canStage: this.m.canStage,
         pile: pileSize(this.m.spillTicks ?? 0), petPoke: this.m.petSay, birds: this.birds, zoom: this.zoom, onPet: (name, cx) => this.pokePet(name, cx),

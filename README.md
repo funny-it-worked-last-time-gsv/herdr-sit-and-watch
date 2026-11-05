@@ -118,6 +118,10 @@ installed and switched on, every name Sit & Watch draws follows them: a renamed 
 (`harbour-tickets-frontend` as `HT-fe`), a hidden one its stand-in (`Space 2`, or the program's name for a tab).
 Off, or not installed, names show as they are. `privacy.js` is screenshot mode's own file, copied in unchanged.
 
+Screenshot mode's demo switch goes further: the desks fill with made-up agents (`fix login`, `migrate db`, ...)
+that start, finish and get stuck on their own, so a recording shows no real work at all. `demo.js` is its file, also
+copied in unchanged.
+
 The [Sit & Watch layout](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch-layout) has both set up together in one window, ready to switch to.
 
 ### Developer mode
@@ -149,6 +153,8 @@ Ask your agent to add this mod (it reads every file first), or by hand:
    (`herdr-app do layout.clone '{"name":"main"}'` makes and switches to `main-copy`) and edit the
    copy. Keep the id `sitandwatch`. To drag the panel's height by the line above it, give the `sidebar`
    column `"resizable": true` (Herdr's own layouts ship it off); or pick a height in Options.
+   The panel is square. To sit it inside a rounded card, give the block
+   `"props": { "radius": 9 }` (the card's radius less its border).
 
 Three optional Claude Code hooks live in `sitandwatch/hooks/`:
 
