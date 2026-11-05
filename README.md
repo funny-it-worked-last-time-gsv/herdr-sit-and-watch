@@ -219,6 +219,12 @@ against screenshots of the live panel.
   most at the low levels so he repeats himself less. His speech bubble wraps at 116px, not the
   chair's 78. The README opens with a new card and pitch, and the preview carries the title.
 
+**5 November 2026**
+
+- **Two birds** ([#1](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/1)). Jin-Bao the conure and Jow-Shy the lovebird join the corner.
+  They hop between the chair back, the other pets' heads and the computers with an agent working,
+  sleep on the lamp, flap when something ships, and now and then fly at the camera.
+
 ## Credits
 
 Built on [zuccs/herdr-office-layout](https://github.com/zuccs/herdr-office-layout) (MIT): the pixel
