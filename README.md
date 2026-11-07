@@ -22,7 +22,7 @@ work. The more of them are working, the more excited you get. See
 [sitandwatch/RECIPE.md](sitandwatch/RECIPE.md) for how it is built.
 
 <p align="center"><img src="sitandwatch/media/a-day-at-the-desks.gif" width="322" alt="The demo: a day at the desks, from a quiet start through sub-agents ramping up and a PR merging to the pets asleep on the chair"><br>
-The demo (click the header): a day at the desks.</p>
+The demo (Options, then Demo): a day at the desks.</p>
 
 <table>
 <tr><td align="center" valign="top"><img src="sitandwatch/media/ovation.gif" width="250" alt="Four or more working: standing ovation"><br>Four or more working: standing ovation</td><td align="center" valign="top"><img src="sitandwatch/media/finished.gif" width="250" alt="One finished: party popper"><br>One finished: party popper</td><td align="center" valign="top"><img src="sitandwatch/media/phone.gif" width="250" alt="One needs you: the phone call"><br>One needs you: the phone call</td></tr>
@@ -54,6 +54,7 @@ Each of these is one state of the demo tour (`herdr-app do sitandwatch.demo-<n>`
 | Six or more working | Chaos: confetti that lingers, faster lines, a bigger head throw. |
 | One crashed (exited non-zero) | Hands on his head, popcorn on the floor. "oh no" |
 | A new agent appears | A nod, a green arrow on the new desk. "welcome" |
+| An agent appears or goes | Its desk gets an effect for 2 seconds, picked at random and never the same twice in a row. Arriving: a beam, sparkles, a puff of smoke or confetti. Leaving, the desk stays where it was, faded: beamed up, a puff of smoke, a wave goodbye, crumbling to dust, or (rarely, about 1 in 10) taken by a UFO. |
 | One has been going 10+ minutes | Glazed over and slumping, a pillow after 30, slumped after 60. "I have a life too" |
 | Two or more were busy and all stopped | Drops back into the chair. "ahh" ... "job done" |
 | Agents working and you haven't touched Herdr in 5 minutes | Stares at you, eats slowly. "you still watching?" |
@@ -76,10 +77,10 @@ Mostly Claude Code agents get a knowing nod, mostly Codex a side-eye, a mix "the
 From level 2 there's a can on the armrest, and his scarf leans toward the colour of whoever's doing
 most of the work. Each state has a pool of lines, shuffled per session. Click him and he talks back.
 
-Click the header, or run `herdr-app do sitandwatch.demo`, to play the demo: a day at the desks, on a loop
+Click **Demo** in Options, or run `herdr-app do sitandwatch.demo`, to play the demo: a day at the desks, on a loop
 (about 50s). It's quiet, work starts, agents and sub-agents ramp up and finish, a PR merges, then he
 winds down, dozes and leaves the chair to the pets. The desks take your real agents' names where there
-are some. Click again to stop. `demo-<n>` opens the labelled tour of all 27 states at state n.
+are some. **<** and **>** in the header step back and forward a scene (or `herdr-app do sitandwatch.demo-prev` / `demo-next`), and **STOP** ends it. `demo-<n>` opens the labelled tour of all 27 states at state n.
 Click a desk to jump to that agent.
 
 ### Minimise
@@ -108,6 +109,7 @@ Click **OPTS** in the panel's header, or run `herdr-app do sitandwatch.options`,
 - **Activity bubbles:** off and the desks show their task titles, not what each session is doing
   right now. The activity hook then sends nothing. Also `herdr-app do sitandwatch.activity`.
 - **Chaos mode** and **developer mode**, the same as their commands below.
+- **Demo:** plays the demo and closes Options. **STOP** in the header ends it.
 
 Choices are kept in Herdr's shared state, so they survive restarts.
 
@@ -230,6 +232,14 @@ against screenshots of the live panel.
 - **Two birds** ([#1](https://github.com/funny-it-worked-last-time-gsv/herdr-sit-and-watch/pull/1)). Jin-Bao the conure and Jow-Shy the lovebird join the corner.
   They hop between the chair back, the other pets' heads and the computers with an agent working,
   sleep on the lamp, flap when something ships, and now and then fly at the camera.
+
+**7 November 2026**
+
+- **The demo moves into Options.** The header no longer starts it. Options has a Demo button, and while
+  it plays the header has `<` and `>` to step between scenes and STOP to end it. A long scene name cuts
+  off with "…" so the buttons always fit.
+- **Desks arrive and leave with a bang.** A random effect for each agent that appears or goes, with the
+  UFO kept rare. A desk that goes keeps its place until its effect has played.
 
 ## Credits
 

@@ -3,14 +3,14 @@
 // state ("sitandwatch.options"), which every copy of the mod reads, so the panel follows at once.
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { shared, setShared, openOverlay, closeOverlay, props } from "herdr";
+import { shared, setShared, openOverlay, closeOverlay, props, run } from "herdr";
 import { ink, txt, PETS } from "./art.js";
 import { FLOORS, HEIGHTS, readOptions } from "./rules.js";
 
 export const OPTIONS_KEY = "sitandwatch.options";
 export const options = () => readOptions(shared(OPTIONS_KEY));
 export function setOption(change) { setShared(OPTIONS_KEY, { ...options(), ...change }); }
-export const openOptions = () => openOverlay({ mod: "sitandwatch", kind: "dialog", width: 380, height: 610, props: { options: true } });
+export const openOptions = () => openOverlay({ mod: "sitandwatch", kind: "dialog", width: 380, height: 660, props: { options: true } });
 
 const PANEL = "#2b2f3a", LABEL = "#9aa3b0", TEXT = "#fff8e1";
 
@@ -45,6 +45,9 @@ export function optionsDialog(handle) {
     .child(section("Activity bubbles", "Desks say what each session is doing. Off: their task titles instead.", onOff("activity", "activity", o.activity)))
     .child(section("Chaos mode", "Lingering confetti and faster everything, for good.", onOff("chaos", "chaos", o.chaos)))
     .child(section("Developer mode", "The strip of numbers and buttons under the header.", onOff("dev", "dev", o.dev)))
+    // the panel owns the demo, so this sends its command (as `herdr-app do sitandwatch.demo` does) and gets out of the way
+    .child(section("Demo", "A day at the desks, on a loop. STOP in the header ends it.",
+      [pill("demo", "play / stop", false, () => { try { run("sitandwatch.demo"); } catch {} close(); })]))
     .child(div().flex_1())
     .child(h_flex().justify_end().child(h_flex().id("opt-done").h(26).px(14).items_center().bg("#ffd86a").cursor_pointer()
       .on_click(() => close()).child(txt("Done", 12, ink))));

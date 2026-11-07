@@ -85,8 +85,58 @@ function cobwebs(sw, level, addr) {
   return out;
 }
 
+// A desk arriving or leaving (trackDeskFx in rules.js): a few pixels over the tile, each pulsing natively with
+// loop() so nothing has to redraw them. At most 8 elements; the 1s timer takes them away after DESK_FX_MS.
+const FX_C = ["#ffd86a", "#e05a8a", "#7ec8e3", "#7ee0a0", "#fff8e1", "#f08a4a"];
+const DESK_FX_ART = {
+  beam: (sw, rh, id) => {
+    const x = Math.round(sw / 2) - 10;
+    return [r(x, -6, 20, rh, "#9fe8ff").id(`${id}-col`).loop("opacity", { from: 0.15, to: 0.6, period: 400 }),
+      r(x + 2, -6, 2, rh, "#ffffff").id(`${id}-l`).loop("opacity", { from: 0.2, to: 0.9, period: 300 }),
+      r(x + 16, -6, 2, rh, "#ffffff").id(`${id}-r`).loop("opacity", { from: 0.9, to: 0.2, period: 300 })];
+  },
+  sparkle: (sw, rh, id) => [[8, 6], [sw - 14, 10], [14, 34], [sw - 10, 40], [Math.round(sw / 2) + 20, 0], [Math.round(sw / 2) - 24, 22]]
+    .map(([x, y], i) => r(x, y, 3, 3, FX_C[i % 2 ? 0 : 4]).id(`${id}-${i}`).loop("opacity", { from: 0, to: 1, period: 300 + i * 70 })),
+  poof: (sw, rh, id) => [[-14, 26, 10], [6, 22, 12], [-4, 14, 9], [12, 34, 8], [-20, 38, 8]]
+    .map(([dx, y, z], i) => r(Math.round(sw / 2) + dx, y, z, z, "#dfe3ea").id(`${id}-${i}`)
+      .loop("opacity", { from: 0.9, to: 0.2, period: 500 + i * 60 }).loop("top", { from: y, to: y - 4, period: 600 + i * 50 })),
+  confetti: (sw, rh, id) => Array.from({ length: 8 }, (_, i) => {
+    const x = 6 + ((i * 23) % (sw - 12));
+    return r(x, -4, 2, 3, FX_C[i % FX_C.length]).id(`${id}-${i}`).loop("top", { from: -4, to: rh - 20, period: 700 + i * 90 });
+  }),
+  ufo: (sw, rh, id) => {
+    const cx = Math.round(sw / 2);
+    return [div().absolute().left(0).top(0).w(sw).h(rh).id(`${id}-ship`).loop("left", { from: -3, to: 3, period: 700 })
+      .child(r(cx - 9, 2, 18, 40, "#d8ffb0").opacity(0.4))
+      .child(r(cx - 6, -9, 12, 5, "#7ee0f0"))
+      .child(r(cx - 14, -4, 28, 6, "#9aa3b0"))
+      .child(r(cx - 9, -2, 2, 2, "#ffd86a").id(`${id}-lt`).loop("opacity", { from: 0.2, to: 1, period: 300 }))];
+  },
+  // crumbles: specks in the desk's and robot's colours drift off to the right and fade, a little pile left on the floor
+  dust: (sw, rh, id) => [[-20, 30, "#f0dcb0"], [-6, 26, "#d4b27c"], [8, 30, "#f0dcb0"], [-8, 38, "#9aa3b0"], [2, 44, "#6e7684"], [-2, 12, "#2b2f3a"], [12, 18, "#2b2f3a"]]
+    .map(([dx, y, c], i) => r(Math.round(sw / 2) + dx, y, 3, 3, c).id(`${id}-${i}`)
+      .loop("left", { from: Math.round(sw / 2) + dx, to: Math.round(sw / 2) + dx + 18 + i * 3, period: 900 + i * 110 })
+      .loop("top", { from: y, to: y - 8 + (i % 3) * 6, period: 900 + i * 110 })
+      .loop("opacity", { from: 1, to: 0, period: 900 + i * 110 }))
+    .concat(r(Math.round(sw / 2) - 10, rh - 18, 20, 3, "#b8ad9c").id(`${id}-pile`)),
+  bye: (sw, rh, id) => [div().absolute().left(0).top(-2).w(sw).flex().justify_center().id(`${id}-say`).loop("top", { from: -2, to: -6, period: 600 })
+    .child(div().px(2).bg("#ffffff").border(1).border_color(ink).child(txt("bye!", 10, ink)))],
+};
+// The row to draw: the live desks, with each desk that just went put back where it was (f.i) as a ghost while its
+// departure plays. Ghosts are never counted anywhere (header, level), only drawn.
+function withGhosts(list, fx) {
+  const row = list.map((a) => ({ a }));
+  Object.entries(fx ?? {}).filter(([k, f]) => f.dir === "out" && f.a && !list.some((a) => a.address === k))
+    .sort(([, x], [, y]) => (x.i ?? 1e9) - (y.i ?? 1e9))
+    .forEach(([, f]) => row.splice(Math.min(f.i ?? row.length, row.length), 0, { a: f.a, ghost: f }));
+  return row;
+}
+const deskFx = (sw, rh, f, addr) => (DESK_FX_ART[f.kind]?.(sw, rh, `pfx-${addr}-${f.dir}-${f.kind}`) ?? []);
+
 // bird: { p, pose, onPet } a bird sitting on this computer (see deskBird() in art.js)
-function desk(a, x, y, sw, rh, mark = null, idleMs = 0, say = null, bird = null) {
+// fx: { dir, kind } its arrival or departure effect; a departure is a ghost: faded, not clickable
+function desk(a, x, y, sw, rh, mark = null, idleMs = 0, say = null, bird = null, fx = null) {
+  const ghost = fx?.dir === "out";
   // working: a little log scrolls on the screen (tool names, then details), two text elements
   const log = logFrames(hash(a.address) % 7);
   const scr = r(Math.round(sw / 2) - 16, 4, 32, 20, "#2b2f3a").child(r(2, 2, 28, 16, SCREEN[a.status] ?? SCREEN.idle).overflow_hidden()
@@ -98,6 +148,11 @@ function desk(a, x, y, sw, rh, mark = null, idleMs = 0, say = null, bird = null)
   const body = bot(look(a), 1.5, a.status === "done", a.status === "working", `pb-${a.address}`).id(`ps-${a.address}`);
   if (a.status === "working") body.loop("top", { from: 0, to: -1, period: 320 });
   if (a.status === "blocked") body.loop("top", { from: 0, to: -5, period: 600 });
+  if (ghost) return div().id(`pg-${a.address}`).relative().flex_none().w(sw).h(rh)
+    .child(div().absolute().left(0).top(0).size_full().opacity(0.45)
+      .child(scr).child(r(Math.round(sw / 2) - 26, 27, 52, 10, "#f0dcb0").border_b(4).border_color("#d4b27c"))
+      .child(div().absolute().left(Math.round(sw / 2) - 12).top(28).child(body)))
+    .children(deskFx(sw, rh, fx, a.address));
   return div().id(`pd-${a.address}`).relative().flex_none().w(sw).h(rh).cursor_pointer()
     .on_click(() => run("agent.focus", { terminal: a.address }))
     .child(scr)
@@ -123,16 +178,18 @@ function desk(a, x, y, sw, rh, mark = null, idleMs = 0, say = null, bird = null)
       .child(div().px(3).bg("#ffffff").border(1).border_color(ink).child(txt("Are you sure?", 10, ink)))))
     // its name under the chair (deskName in names.js; one element, centred by its width: 5px a character)
     .child(((name) => txt(name, 10, a.focused ? "#fff8e1" : ink).absolute().left(Math.round(sw / 2 - name.length * 2.5)).top(rh - 12).id(`pn-${a.address}`))
-      (deskName(a)));
+      (deskName(a)))
+    .when(!!fx, (e) => e.children(deskFx(sw, rh, fx, a.address)));
 }
 
-// The minimise button: its own mouse-down and click, so the header's demo toggle never fires.
-function minButton(label, onMin) {
-  return div().id("saw-min").px(3).cursor_pointer()
+// A header button: its own mouse-down and click, so the header's click (STOP in the demo) never fires.
+// One element (the text is the button): the demo's header sits close to the element budget.
+function headButton(id, label, onClick, color = "#fff8e1") {
+  return txt(label, 10, color).id(id).flex_none().px(3).cursor_pointer()
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-    .on_click((_e, cx) => { cx.stop_propagation(); onMin(cx); })
-    .child(txt(label, 10, "#fff8e1"));
+    .on_click((_e, cx) => { cx.stop_propagation(); onClick(cx); });
 }
+const minButton = (label, onMin) => headButton("saw-min", label, onMin);
 const powerBar = (power, vertical) => {
   const n = Math.round((40 * powerShown(power)) / POWER_STEPS);
   return vertical
@@ -200,25 +257,30 @@ export function panel(list, party = false, opts = {}) {
   // doesn't clip children to a parent's radius, so the header and bottom strip round their own corners too.
   const rad = opts.radius ?? 0;
   return v_flex().id("saw-panel").size_full().overflow_hidden().rounded(rad).bg(FLOORS[o.floor].color)
-    // header: click toggles the demo; in the demo it says which state you're looking at
-    .child(h_flex().id("saw-head").h(opts.label ? 30 : 23).w_full().flex_none().px(8).gap(6).items_center().cursor_pointer().rounded_t(rad)
+    // header: in the demo (started from Options) it says which state you're looking at, and a click stops it
+    .child(h_flex().id("saw-head").h(opts.label ? 30 : 23).w_full().flex_none().px(8).gap(6).items_center().rounded_t(rad)
       .bg(opts.label ? "#6b3f1f" : "#8796b0").border_b(3).border_color("#7a4a28")
-      .when(!!opts.toggle, (e) => e.on_click((_e, cx) => opts.toggle(cx)))
-      .child(txt(opts.label ?? `${working}/${total} AT IT`, opts.label ? 10 : 12, "#fff8e1"))
-      .child(div().flex_1())
+      .when(!!opts.label && !!opts.toggle, (e) => e.cursor_pointer().on_click((_e, cx) => opts.toggle(cx)))
+      // the label takes the spare width and cuts off with "…", so the buttons after it always fit
+      .child(txt(opts.label ?? `${working}/${total} AT IT`, opts.label ? 10 : 12, "#fff8e1").flex_1().min_w(0).truncate())
       // the power bar: fills with working-agent seconds, POWER! when full
       .child(powerBar(opts.power ?? 0, false))
       // the Options dialog; its own click, so it doesn't start the demo
-      .child(div().id("saw-opts").px(3).cursor_pointer()
+      .child(div().id("saw-opts").flex_none().px(3).cursor_pointer()
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .on_click((_e, cx) => { cx.stop_propagation(); openOptions(); })
         .child(txt("OPTS", 10, "#dfe6f0")))
-      .child(txt(opts.label ? "STOP" : "DEMO", 10, opts.label ? "#ffd86a" : "#dfe6f0"))
+      // in the demo: previous and next scene, then STOP (the header's own click)
+      .when(!!opts.label && !!opts.onStep, (e) => e.child(headButton("saw-prev", "<", (cx) => opts.onStep(-1, cx), "#ffd86a"))
+        .child(headButton("saw-next", ">", (cx) => opts.onStep(1, cx), "#ffd86a")))
+      .when(!!opts.label, (e) => e.child(txt("STOP", 10, "#ffd86a").flex_none()))
       .when(!!opts.onMin, (e) => e.child(minButton("_", opts.onMin))))
     .when(!!dev, (e) => e.child(devStrip(dev, mood, level, m, opts.power ?? 0)))
     .child(div().id("saw-desks").flex().flex_wrap().justify_center().content_start().flex_1().w_full().overflow_hidden().pt(6)
-      .children(list.map((a) => desk(a, 0, 0, sw, rh, a.address === markAddr ? mood : null, opts.idle?.[a.address] ?? 0,
-        opts.say?.address === a.address ? opts.say.text : null, onDesk[a.address] ?? null))))
+      .children(withGhosts(list, opts.deskFx).map(({ a, ghost }) => ghost
+        ? desk({ ...a, status: "idle", waiting: false, subs: null }, 0, 0, sw, rh, null, 0, null, null, ghost)
+        : desk(a, 0, 0, sw, rh, a.address === markAddr ? mood : null, opts.idle?.[a.address] ?? 0,
+          opts.say?.address === a.address ? opts.say.text : null, onDesk[a.address] ?? null, opts.deskFx?.[a.address]?.dir === "in" ? opts.deskFx[a.address] : null))))
     .child(div().flex().justify_center().w_full().h(cornerH).flex_none().rounded_b(rad).bg(glow)
       .child(div().relative().w(devW).h(cornerH)
         .child(r(-12, cornerH - 16, devW + 24, 10, "#5e1420"))

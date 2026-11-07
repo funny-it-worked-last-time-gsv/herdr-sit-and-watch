@@ -9,7 +9,7 @@ import { LINES } from "./lines.js";
 import { panel } from "./panel.js";
 import { spaceLabel, tabLabel, tabName } from "./names.js";
 import { spaceName, tabText } from "./privacy.js";
-import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, planHeight, HEIGHT_TROUBLE, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_OPEN, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting, talker, sayText, SAY_TURN_MS, SAY_SHOW_MS, parseActCommand, freshAct, actChanged, nextPerch } from "./rules.js";
+import { ONE_SHOTS, CHIP_KEY, startOneShot, devLevel, byLastActive, DESK_AGES, powerStep, powerShown, loadPower, POWER_FULL, findBlock, keepMin, planHeight, HEIGHT_TROUBLE, HEIGHTS, shouldClearMin, MIN_GUARD_MS, MIN_OPEN, MIN_TROUBLE, canKnock, pileSize, parseSubCommand, pruneSubs, subDesks, foldSubs, trackWaiting, talker, sayText, SAY_TURN_MS, SAY_SHOW_MS, parseActCommand, freshAct, actChanged, nextPerch, trackDeskFx } from "./rules.js";
 import { pickLine } from "./lines.js";
 
 // A pixel-art office: every agent is a little worker at a desk, and each space gets its own
@@ -214,6 +214,7 @@ export default class Office extends View {
         this.minBusy = false;
         if (this.minCheck()) changed = true;
         if (this.knockTick(cx)) changed = true;
+        if (Object.keys(this.deskFx ?? {}).length) changed = true;   // redraw until the desk effects run out (render drops them)
         // a desk's turn to speak starts or ends: draw it (only while someone's working)
         const sayKey = this.list?.some((a) => a.status === "working") ? Math.floor(Date.now() / SAY_SHOW_MS) : null;
         if (sayKey !== this.sayKey) { this.sayKey = sayKey; changed = true; }
@@ -253,6 +254,7 @@ export default class Office extends View {
           // One bad command never ends the loop: the hook's events and every later command still land.
           try {
           if (c === "demo") { this.toggleDemo(); cx.notify(); }
+          if (c === "demo-next" || c === "demo-prev") { this.demoStep(c === "demo-next" ? 1 : -1); cx.notify(); }
           // demo-<n>: the demo at state n (1-based), e.g. for recording one state
           const dn = /^demo-(\d+)$/.exec(c);
           if (dn && +dn[1] >= 1 && +dn[1] <= DEMO_STATES.length) { this.demoMode = "tour"; this.demoAt = Date.now() - (+dn[1] - 1) * DEMO_MS; cx.notify(); }
@@ -630,6 +632,13 @@ export default class Office extends View {
 
   // DEMO (the header, or `herdr-app do sitandwatch.demo`) plays the story; again stops it.
   toggleDemo() { this.demoMode = "story"; this.demoAt = this.demoAt == null ? Date.now() : null; }
+  // < and > in the demo's header (or demo-next / demo-prev): the start of the next or previous scene, wrapping round
+  demoStep(dir) {
+    if (this.demoAt == null) return;
+    const scenes = this.demoMode === "story" ? STORY : DEMO_STATES, now = Date.now(), n = scenes.length;
+    const j = (sceneAt(scenes, now - this.demoAt).i + dir + n) % n;
+    this.demoAt = now - scenes.slice(0, j).reduce((t, sc) => t + (sc[7] ?? DEMO_MS), 0);
+  }
 
   roomProps() {
     const { width: w, height: h } = this.size;
@@ -910,7 +919,7 @@ export default class Office extends View {
         const power = [0, 0.2, 0.5, 0.9][devLevel(fake)] * POWER_FULL;   // the demo's bar follows its level
         const sayAt = talker(fake, now), sayDesk = fake.find((a) => a.address === sayAt);
         const say = sayDesk ? { address: sayAt, text: sayText(tabLabel(sayDesk, sayDesk.title ?? "", ""), Math.floor(now / SAY_TURN_MS)) } : null;
-        return panel(fake, party, { say, radius: p.radius, label: `DEMO ${i + 1}/${scenes.length}  ${label}`, toggle, ship: stage, shipKey: loop * scenes.length + i, m, banner: BANNERS.merged, onDev: poke, idle, power });
+        return panel(fake, party, { say, radius: p.radius, label: `DEMO ${i + 1}/${scenes.length}  ${label}`, toggle, onStep: (d, cx) => { this.demoStep(d); cx.notify(); }, ship: stage, shipKey: loop * scenes.length + i, m, banner: BANNERS.merged, onDev: poke, idle, power });
       }
       // An agent going working -> done sets off the party popper for 3s; the 1s timer clears it.
       const prev = this.prevStatus ?? {};
@@ -918,6 +927,8 @@ export default class Office extends View {
       const m = this.trackMetrics(list, prev, !this.prevStatus);
       this.prevStatus = Object.fromEntries(list.map((a) => [a.address, a.status]));
       list = foldSubs(list);                                 // sub-agents: a 2/5 badge on their parent's desk
+      // desks arriving and leaving get an effect; not in the first 15s, when the background helpers arrive with the first poll
+      this.deskFx = trackDeskFx(this.deskFx ?? {}, now - this.m.bornAt > 15000 ? this.deskPrev ?? null : null, list, now);
       // Desks in last-active order: busy agents are active now; the rest since they entered their
       // status (hc's status_ms when it agrees, else when this panel saw the change). idle: ms since.
       const lastActive = {}, idle = {};
@@ -934,6 +945,7 @@ export default class Office extends View {
       }
       list = byLastActive(list, lastActive);
       this.list = list;
+      this.deskPrev = list;                                  // as drawn: a desk that goes keeps its place (trackDeskFx)
       const d = this.dev;
       const dev = options().dev ? {
         mood: d.mood, level: d.level, open: d.open,
@@ -956,7 +968,7 @@ export default class Office extends View {
       try { return panel(list, (this.partyUntil ?? 0) > now, { say, radius: p.radius, toggle, ship: this.ship?.stage ?? null, shipKey: this.ship?.key, firstShip: this.ship?.first, banner: this.ship?.banner, m, onDev: poke, dev, walk, idle, power: this.m.power,
         min: this.min?.axis ?? null, onMin: (cx) => this.minimise(cx),
         knock: canKnock(m.longestWorkingMs, devLevel(list)) || (this.m.knockUntil ?? 0) > now, canStage: this.m.canStage,
-        pile: pileSize(this.m.spillTicks ?? 0), petPoke: this.m.petSay, birds: this.birds, zoom: this.zoom, onPet: (name, cx) => this.pokePet(name, cx),
+        pile: pileSize(this.m.spillTicks ?? 0), petPoke: this.m.petSay, birds: this.birds, zoom: this.zoom, onPet: (name, cx) => this.pokePet(name, cx), deskFx: this.deskFx,
         onDrawn: (d) => { this.drawn = d; } }); }
       catch (e) { return div().p(8).bg("#fff").child(txt(`ERR ${e?.message ?? e}`, 12, "#a8322a")); }
     }

@@ -23,9 +23,9 @@ flex column, top to bottom, on the floor colour from Options (`FLOORS` in `rules
 
 1. **Header**, 23px, `#8796b0` with a 3px `#7a4a28` bottom border: `N/M AT IT` (12px, `#fff8e1`,
    working agents over all agents, running sub-agents counted in both) on the left, then a gap, the
-   42×8 power bar (`#2b2f3a`, 1px `#7a4a28` frame, `#ffd86a` fill), `OPTS`, `DEMO` (10px, `#dfe6f0`)
+   42×8 power bar (`#2b2f3a`, 1px `#7a4a28` frame, `#ffd86a` fill), `OPTS` (10px, `#dfe6f0`)
    and `_` (minimise). In the demo it grows to 30px, turns `#6b3f1f` and reads
-   `DEMO i/27  <state>` (10px) with `STOP` in `#ffd86a`. Developer mode adds its strip below.
+   `DEMO i/27  <state>` (10px) with `<`, `>` (previous and next scene, wrapping round, each its own click so the header's doesn't fire, also `demo-prev` / `demo-next`) and `STOP` in `#ffd86a`, and a click on the header stops the demo. Outside the demo the header takes no clicks. Developer mode adds its strip below.
 2. **Desks**, filling the remaining height, `overflow_hidden`, 6px top padding: one 84×68 tile per
    agent (68px tall to fit its name) in a centred wrapping row, in last-active order. A tile holds a 32×20 `#2b2f3a`
    monitor (28×16 screen), a 6×3 stand, a 52px desk (`#f0dcb0` top 6px, `#d4b27c` front 4px, one
@@ -150,7 +150,12 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - **An agent is blocked**: the mood drops to at most level 1, a sad mouth, a tear, the popcorn
   spilled on the floor, `wah wah`, `they need me?!`, `noooo`.
 - **Clicking a desk** focuses that agent (`agent.focus`).
-- **Demo**: clicking the header, or `herdr-app do sitandwatch.demo`, plays `STORY` in `main.js` on a
+- **Desks arriving and leaving**: `trackDeskFx` in `rules.js` compares the desks with the row as last drawn
+  (not in the first 15s, when the helpers arrive). A new desk gets an arrival effect and a gone one stays
+  as a faded, unclickable ghost in its old place, for `DESK_FX_MS` (2s). `pickDeskFx` picks from `DESK_FX`
+  at random by `DESK_FX_WEIGHT` (the UFO 0.4, the rest 1), never the previous desk's. Each effect is at
+  most 8 elements, all native `loop()`s, drawn by `DESK_FX_ART` in `panel.js`. The ghost is never counted.
+- **Demo**: the Demo pill in Options (it runs `sitandwatch.demo` and closes the dialog), or `herdr-app do sitandwatch.demo`, plays `STORY` in `main.js` on a
   loop (`demoMode: "story"`): 11 captioned scenes, each a `DEMO_STATES`-style row plus its length in
   ms (about 52s in all): quiet (the empty chair), work starts, another joins (welcome), sub-agents
   spawn (0/2), ramping up (0/5), sub-agents finish (2/5, fist pump), all done (5/5, burst), shipped (PR
@@ -390,7 +395,7 @@ wins, and `spectator()` draws that one pose and speech set. `m` comes from `trac
 - `options.js`: the Options dialog, opened from OPTS in the header (its own `on_mouse_down` /
   `on_click` stop propagation, so the header's demo toggle doesn't fire) or
   `herdr-app do sitandwatch.options`, as `openOverlay({ mod: "sitandwatch", kind: "dialog", width: 380,
-  height: 610, props: { options: true } })`. With `props().options` the view skips the panel's timers
+  height: 660, props: { options: true } })`. With `props().options` the view skips the panel's timers
   and draws the dialog: height (`HEIGHTS` in `rules.js`: 240/300/400/500, or `layout`), floor (`FLOORS` in `rules.js`, slate `#6b7a8f` by default), pets on/off,
   speech bubbles on/off, activity bubbles on/off, chaos and developer mode.
 - Stored in `shared("sitandwatch.options")`, read through `readOptions()` (any missing or broken value

@@ -620,7 +620,7 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (optsNow().chaos) fails.push("commands: a second \"chaos\" should turn it off");
   world.overlays = [];
   await send("options");
-  if (!same(world.overlays, [{ mod: "sitandwatch", kind: "dialog", width: 380, height: 610, props: { options: true } }])) fails.push(`commands: "options" should open the dialog, overlays ${JSON.stringify(world.overlays)}`);
+  if (!same(world.overlays, [{ mod: "sitandwatch", kind: "dialog", width: 380, height: 660, props: { options: true } }])) fails.push(`commands: "options" should open the dialog, overlays ${JSON.stringify(world.overlays)}`);
   render(o, LISTS.w1);
   await send("pets-ship");
   if (o.dev.pets !== "ship" || !ids(render(o, LISTS.w1)).includes("pet-awoo")) fails.push(`commands: "pets-ship" should force the ship scene, pets ${o.dev.pets}`);
@@ -660,6 +660,11 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (!same(optsNow(), want)) fails.push(`dialog: after the clicks options are ${JSON.stringify(optsNow())}`);
   press("opt-dev-off");
   if (optsNow().dev) fails.push("dialog: dev off should turn developer mode off");
+  // the demo lives in Options now: its pill sends the panel's demo command and closes the dialog
+  world.runs = []; world.overlays = [{ mod: "sitandwatch" }]; world.props = { options: true, overlay: "ov1" };
+  press("opt-demo");
+  if (!same(world.runs, [["sitandwatch.demo", undefined]]) || world.overlays.length) fails.push(`dialog: Demo should run sitandwatch.demo and close, runs ${JSON.stringify(world.runs)} overlays ${JSON.stringify(world.overlays)}`);
+  world.overlays = [{ mod: "sitandwatch", kind: "dialog", props: { options: true } }];
   press("opt-done");
   if (world.overlays.length) fails.push(`dialog: Done should close it, overlays ${JSON.stringify(world.overlays)}`);
   world.overlays = [{ mod: "sitandwatch" }, { mod: "other" }]; world.props = { options: true, overlay: "ov1" };
@@ -676,6 +681,11 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   if (world.overlays[0]?.props?.options !== true || !pcx.stopped || o.demoAt != null) fails.push(`dialog: OPTS should open the dialog and stop the click, overlays ${JSON.stringify(world.overlays)}, stopped ${pcx.stopped}`);
   pcx.stopped = false; click(t, "saw-opts", pcx, "on_mouse_down");
   if (!pcx.stopped) fails.push("dialog: OPTS mouse-down should stop propagation too");
+  // the header no longer starts the demo or says DEMO; while one plays it says STOP and a click ends it
+  if (click(t, "saw-head", pcx) || o.demoAt != null || texts(t).includes("DEMO")) fails.push(`dialog: the header shouldn't start the demo or say DEMO, demoAt ${o.demoAt}`);
+  o.toggleDemo();
+  const td = render(o, LISTS.w1);
+  if (!texts(td).includes("STOP") || !click(td, "saw-head", pcx) || o.demoAt != null) fails.push(`dialog: in the demo the header should say STOP and stop it, demoAt ${o.demoAt}`);
 }
 
 { // developer mode's pets row: a chip per scene plus auto and wander, and each does what it says
@@ -1132,6 +1142,73 @@ const optsNow = () => R.readOptions(world.shared[OPT.OPTIONS_KEY]);
   await send("demo-2"); jump(1000);
   const head2 = texts(render(o, [])).find((x) => /^DEMO \d/.test(x)) ?? "";
   if (!head2.startsWith("DEMO 2/")) fails.push(`demo-n: demo-2 should jump back to state 2, got "${head2}"`);
+  // next and prev: demo-next / demo-prev and the header's > and <, wrapping at both ends, without stopping the demo
+  const headNow = () => (texts(render(o, [])).find((x) => /^DEMO \d/.test(x)) ?? "").replace(/^DEMO (\d+)\/(\d+).*$/, "$1/$2");
+  await send("demo-next"); jump(1000); const n1 = headNow();
+  await send("demo-prev"); await send("demo-prev"); jump(1000); const n2 = headNow();
+  if (n1 !== "3/27" || n2 !== "1/27") fails.push(`demo-n: next from 2 should be 3, then prev twice 1, got ${n1} ${n2}`);
+  const pcx = makeCx(); pcx.stopped = false;
+  if (!click(render(o, []), "saw-prev", pcx) || !pcx.stopped || headNow() !== "27/27") fails.push(`demo-n: < from 1 should wrap to 27 and stop the click reaching the header, got ${headNow()} stopped ${pcx.stopped}`);
+  click(render(o, []), "saw-next", pcx);
+  if (headNow() !== "1/27" || o.demoAt == null) fails.push(`demo-n: > from 27 should wrap to 1 and keep the demo on, got ${headNow()}`);
+  o.toggleDemo(); await send("demo-next");
+  if (o.demoAt != null || ids(render(o, [])).includes("saw-next")) fails.push("demo-n: next does nothing with the demo off, and the buttons only show in the demo");
+}
+
+// ---- desks arriving and leaving ---------------------------------------------------------
+{
+  // Value: protects=a new desk getting an arrival effect and a gone one staying as a faded, unclickable ghost with a
+  //   departure effect, both picked at random from DESK_FX and gone after DESK_FX_MS, none in the first 15s (the helpers
+  //   arrive with the first poll), and the ghost never counted in the header; fails_when=no effect, the same effect every
+  //   time, a ghost that lingers or counts, or effects on startup; why_new=nothing drew agents coming and going but the
+  //   welcome arrow; seam=none; no_claim=how the loops look in Herdr
+  const R = await import(pathToFileURL(join(MOD, "rules.js")).href);
+  const A = (...xs) => xs.map((address) => ({ address }));
+  if (R.trackDeskFx({}, A("a", "b", "c"), A("a", "c"), 0).b?.i !== 1) fails.push("desk fx: a departure should remember its place in the row");
+  if (Object.keys(R.trackDeskFx({}, null, A("a"), 0)).length) fails.push("desk fx: no previous desks (startup) should start nothing");
+  const f1 = R.trackDeskFx({}, A("a", "b"), A("a", "c"), 1000);
+  if (f1.c?.dir !== "in" || f1.b?.dir !== "out" || f1.b?.a?.address !== "b" || f1.a) fails.push(`desk fx: c arrives, b leaves, a nothing, got ${JSON.stringify(f1)}`);
+  if (!R.DESK_FX.in.includes(f1.c?.kind) || !R.DESK_FX.out.includes(f1.b?.kind)) fails.push(`desk fx: kinds should come from DESK_FX, got ${f1.c?.kind}/${f1.b?.kind}`);
+  if (Object.keys(R.trackDeskFx(f1, A("a", "c"), A("a", "c"), 1000 + R.DESK_FX_MS)).length) fails.push("desk fx: effects should go after DESK_FX_MS");
+  for (const dir of ["in", "out"]) {
+    const seen = new Set(); let last = null;
+    for (let i = 0; i < 400; i++) { last = R.pickDeskFx(dir, `x${i}`, last); seen.add(last); }
+    if (seen.size !== R.DESK_FX[dir].length) fails.push(`desk fx: random ${dir} picks should use every kind, got ${[...seen]}`);
+  }
+  // no repeats, and the UFO rare: about 1 departure in 10, well under an even share (1 in 4 or 5)
+  let ufos = 0, repeats = 0, prev = null;
+  for (let i = 0; i < 4000; i++) { const k = R.pickDeskFx("out", `y${i}`, prev); if (k === prev) repeats++; if (k === "ufo") ufos++; prev = k; }
+  if (repeats || ufos < 4000 * 0.03 || ufos > 4000 * 0.15) fails.push(`desk fx: no repeats and a rare ufo (3-15%), got ${repeats} repeats, ufo ${(ufos / 40).toFixed(1)}%`);
+  const { o } = mount();
+  render(o, ["idle", "idle"]); render(o, ["idle", "idle", "idle"]);
+  if (Object.keys(o.deskFx ?? {}).length) fails.push("desk fx: nothing in the first 15s");
+  jump(20000); render(o, ["idle", "idle", "idle"]);
+  let t = render(o, ["working", "idle"]);
+  if (!ids(t).includes("pg-a2") || !ids(t).some((x) => x.startsWith("pfx-a2-out-"))) fails.push(`desk fx: a2 left, its ghost should show, got ${ids(t).filter((x) => /^p[gf]/.test(x))}`);
+  if (!texts(t).includes("1/2 AT IT")) fails.push(`desk fx: the ghost shouldn't count, header ${texts(t).find((x) => / AT IT$/.test(x))}`);
+  t = render(o, ["working", "idle", "idle", "idle"]);
+  if (!ids(t).some((x) => x.startsWith("pfx-a3-in-")) || !ids(t).some((x) => x.startsWith("pfx-a2-in-")) || ids(t).includes("pg-a2")) fails.push(`desk fx: a2 back and a3 new should both arrive, got ${ids(t).filter((x) => /^p[gf]/.test(x))}`);
+  S.advance(3000);
+  t = render(o, ["working", "idle", "idle", "idle"]);
+  if (ids(t).some((x) => /^p(g|fx)-/.test(x))) fails.push("desk fx: all gone after DESK_FX_MS");
+  // a desk that goes keeps its place in the row while its effect plays: the middle desk of three leaves
+  {
+    const { o } = mount();
+    render(o, ["working", "working", "working"]); jump(20000);
+    const row = (t) => ids(t).filter((x) => /^p[dg]-a\d$/.test(x)).map((x) => x.slice(3));
+    const before = row(render(o, ["working", "working", "working"])), gone = before[1];
+    world.agents = agentsOf(["working", "working", "working"]).filter((a) => a.address !== gone);
+    const after = row(o.render());
+    if (JSON.stringify(after) !== JSON.stringify(before)) fails.push(`desk fx: ${gone} should keep its place as a ghost, row ${before} then ${after}`);
+  }
+  // every effect draws, arriving and leaving (a1 arriving, a9 a departed ghost)
+  for (const dir of ["in", "out"]) for (const kind of R.DESK_FX[dir]) {
+    o.deskFx = { [dir === "in" ? "a1" : "a9"]: { dir, kind, at: clock.now, a: { address: "a9", status: "idle" } } };
+    const tk = render(o, ["working", "idle"]);
+    noErr(tk, `desk fx ${dir} ${kind}`);
+    const mine = ids(tk).filter((x) => x.startsWith(`pfx-${dir === "in" ? "a1" : "a9"}-${dir}-${kind}`)).length;
+    if (mine < 1 || mine > 8) fails.push(`desk fx: ${dir} ${kind} should draw 1-8 elements, drew ${mine}`);
+  }
 }
 
 // ---- Claude Code sub-agents ----------------------------------------------------------

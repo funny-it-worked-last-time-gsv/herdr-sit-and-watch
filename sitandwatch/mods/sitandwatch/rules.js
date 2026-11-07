@@ -420,3 +420,37 @@ export const freshAct = (act, now) => (act && now - act.at < ACT_FRESH_MS ? act.
 // same text after the old one went stale (the bubble had gone back to the title). A busy session
 // repeats itself a lot ("Read main.js" three times), and each redraw is a whole panel.
 export const actChanged = (prev, text, now) => !prev || prev.text !== text || now - prev.at >= ACT_FRESH_MS;
+
+// ---- desks arriving and leaving -----------------------------------------------------
+// A desk that appears gets an arrival effect, and one that goes stays for a moment as a ghost with a departure
+// effect. Cosmetic only: no mood, level or one-shot reads these. The 1s timer redraws while any is live.
+export const DESK_FX_MS = 2000;
+export const DESK_FX = {
+  in: ["beam", "sparkle", "poof", "confetti"],   // beamed down, twinkles, a puff of smoke, a sprinkle from above
+  out: ["beam", "poof", "ufo", "bye", "dust"],   // beamed up, a puff of smoke, taken by a saucer, waves goodbye, crumbles to dust
+};
+
+// How likely each effect is against the others (1 unless listed): the saucer is rare, about 1 departure in 10.
+export const DESK_FX_WEIGHT = { ufo: 0.4 };
+
+// Which effect a desk gets, at random by DESK_FX_WEIGHT, never the same as the previous desk's (last, null at
+// first), so two desks arriving together look different. dir: "in" or "out". Returns one of DESK_FX[dir].
+export function pickDeskFx(dir, addr, last) {
+  const kinds = DESK_FX[dir].filter((k) => k !== last), w = (k) => DESK_FX_WEIGHT[k] ?? 1;
+  let x = Math.random() * kinds.reduce((n, k) => n + w(k), 0);
+  return kinds.find((k) => (x -= w(k)) < 0) ?? kinds[kinds.length - 1];
+}
+
+// fx: address -> { dir, kind, at, a, i } (a: the agent as last seen, for drawing a departed desk; i: its place in
+// the row as last drawn, which its ghost keeps). prev: the desks as last drawn, in order; list: the desks now (sub-agents already folded into their parent's desk); prev null skips the
+// comparison (the first polls, when the helpers arrive all at once). Drops effects older than DESK_FX_MS.
+export function trackDeskFx(fx, prev, list, now, pick = pickDeskFx) {
+  const out = {};
+  for (const [k, f] of Object.entries(fx)) if (now - f.at < DESK_FX_MS) out[k] = f;
+  if (!prev) return out;
+  const was = new Set(prev.map((a) => a.address)), is = new Set(list.map((a) => a.address));
+  let last = Object.values(out).sort((x, y) => y.at - x.at)[0]?.kind ?? null;
+  for (const a of list) if (!was.has(a.address)) { last = pick("in", a.address, last); out[a.address] = { dir: "in", kind: last, at: now }; }
+  prev.forEach((a, i) => { if (!is.has(a.address)) { last = pick("out", a.address, last); out[a.address] = { dir: "out", kind: last, at: now, a, i }; } });
+  return out;
+}
